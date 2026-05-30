@@ -10,21 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { HexColorPicker } from 'react-colorful';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { loadGoogleFonts } from '@/lib/google-font';
-import { GoogleFont } from '@/lib/types';
+import type { GoogleFont, SelectedText, TextStyleUpdate } from '@/lib/types';
 import { Palette, AlignLeft, AlignCenter, AlignRight, RotateCcw, RotateCw, Type } from 'lucide-react';
 
 interface PropertiesPanelProps {
-	selectedObjectData?: {
-		id: string;
-		text: string;
-		fontFamily: string;
-		fontSize: number;
-		fontWeight: string | number;
-		fill: string;
-		opacity: number;
-		textAlign: string;
-	};
-	onUpdateText: (updates: any) => void;
+	selectedObjectData: SelectedText | null;
+	onUpdateText: (updates: TextStyleUpdate) => void;
 }
 
 const FONT_WEIGHTS = [
@@ -67,13 +58,13 @@ const useFonts = () => {
 	return { fonts, fontsLoading };
 };
 
-const useDebouncedUpdate = (callback: (updates: any) => void, delay: number = 100) => {
+const useDebouncedUpdate = (callback: (updates: TextStyleUpdate) => void, delay: number = 100) => {
 	const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
 	// A pending edit must not land on whichever layer is selected next.
 	useEffect(() => () => clearTimeout(timeoutRef.current), []);
 
-	return useCallback((updates: any) => {
+	return useCallback((updates: TextStyleUpdate) => {
 		if (timeoutRef.current) {
 			clearTimeout(timeoutRef.current);
 		}
@@ -89,7 +80,7 @@ const TextContentSection = memo(({
 	onUpdate 
 }: { 
 	text: string; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 300);
 
@@ -118,7 +109,7 @@ const FontFamilySection = memo(({
 	fontFamily: string; 
 	fonts: GoogleFont[]; 
 	fontsLoading: boolean; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	return (
 		<div className="space-y-2">
@@ -149,7 +140,7 @@ const FontSizeSection = memo(({
 	onUpdate 
 }: { 
 	fontSize: number; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 	const [size, setSize] = useState(fontSize);
@@ -195,7 +186,7 @@ const FontWeightSection = memo(({
 	onUpdate 
 }: { 
 	fontWeight: string | number; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	return (
 		<div className="space-y-2">
@@ -222,7 +213,7 @@ const ColorSection = memo(({
 	onUpdate 
 }: { 
 	fill: string; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	const [color, setColor] = useState(fill);
 
@@ -266,7 +257,7 @@ const OpacitySection = memo(({
 	onUpdate 
 }: { 
 	opacity: number; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 
@@ -296,7 +287,7 @@ const AlignmentSection = memo(({
 	onUpdate 
 }: { 
 	textAlign: string; 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	return (
 		<div className="space-y-2">
@@ -344,7 +335,7 @@ AlignmentSection.displayName = 'AlignmentSection';
 const RotationSection = memo(({ 
 	onUpdate 
 }: { 
-	onUpdate: (updates: any) => void; 
+	onUpdate: (updates: TextStyleUpdate) => void; 
 }) => {
 	return (
 		<div className="space-y-2">

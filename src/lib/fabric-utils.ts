@@ -1,82 +1,65 @@
 import * as fabric from 'fabric';
+import type { TextLayer, TextStyle } from '@/lib/types';
+
+export const BLANK_CANVAS = { width: 800, height: 600, color: '#f8f9fa' };
+
+/** A text object on the canvas, tagged with the id the layer panel uses. */
+export type LayerObject = fabric.IText & { id: string };
+
+export const isTextObject = (obj: fabric.FabricObject | null | undefined): obj is LayerObject =>
+  obj instanceof fabric.Text;
+
+export const findLayer = (canvas: fabric.Canvas, id: string): LayerObject | undefined =>
+  canvas.getObjects().find((obj): obj is LayerObject => isTextObject(obj) && obj.id === id);
+
+/** Text layers in stacking order, bottom first, as the layer panel shows them. */
+export const readLayers = (canvas: fabric.Canvas): TextLayer[] =>
+  canvas.getObjects().filter(isTextObject).map(obj => ({
+    id: obj.id,
+    text: obj.text,
+    visible: obj.visible,
+    locked: !obj.selectable,
+  }));
 
 export const createCanvas = (canvasElement: HTMLCanvasElement): fabric.Canvas => {
   const canvas = new fabric.Canvas(canvasElement, {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: BLANK_CANVAS.color,
     selection: true,
     preserveObjectStacking: true,
-    // Add these options for better image handling
     allowTouchScrolling: false,
-    renderOnAddRemove: true, // Enable automatic rendering on add/remove
-    skipOffscreen: false // Ensure all objects are rendered
+    // Draw layers dragged partly outside the preview too, so nothing pops in and out.
+    skipOffscreen: false,
   });
-
-  // Enable object caching for better performance
-  fabric.Object.prototype.objectCaching = true;
-  
-  // Set default canvas dimensions
-  canvas.setDimensions({ width: 800, height: 600 });
-
+  canvas.setDimensions(BLANK_CANVAS);
   return canvas;
 };
 
-export const addTextToCanvas = (canvas: fabric.Canvas, options: {
-  text: string;
-  left: number;
-  top: number;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight: string;
-  fill: string;
-  opacity: number;
-  textAlign: string;
-}): fabric.IText => {
-  const textObject = new fabric.IText(options.text, {
-    left: options.left,
-    top: options.top,
-    fontFamily: options.fontFamily,
-    fontSize: options.fontSize,
-    fontWeight: options.fontWeight,
-    fill: options.fill,
-    opacity: options.opacity,
-    textAlign: options.textAlign === 'right' ? 'right' : options.textAlign === 'center' ? 'center' : 'left',
+export const addTextToCanvas = (
+  canvas: fabric.Canvas,
+  options: TextStyle & { id: string; left: number; top: number },
+): LayerObject => {
+  const { id, text, textAlign, ...style } = options;
+  const textObject = new fabric.IText(text, {
+    ...style,
+    textAlign: textAlign === 'right' || textAlign === 'center' ? textAlign : 'left',
     cornerStyle: 'circle',
     cornerColor: '#3b82f6',
     cornerStrokeColor: '#ffffff',
     cornerSize: 8,
     transparentCorners: false,
-  });
+  }) as LayerObject;
+  textObject.id = id;
 
   canvas.add(textObject);
   canvas.setActiveObject(textObject);
-  canvas.renderAll();
-
+  canvas.requestRenderAll();
   return textObject;
 };
 
-export const updateTextObject = (textObject: fabric.Text, updates: Partial<{
-  text: string;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight: string;
-  fill: string;
-  opacity: number;
-  textAlign: string;
-}>) => {
-  Object.keys(updates).forEach(key => {
-    if (updates[key as keyof typeof updates] !== undefined) {
-      textObject.set(key as keyof fabric.Text, updates[key as keyof typeof updates]);
-    }
-  });
-  
-  textObject.canvas?.renderAll();
-};
-
-export const exportCanvasToPNG = (canvas: fabric.Canvas, multiplier = 1): string => {
-  return canvas.toDataURL({
+export const exportCanvasToPNG = (canvas: fabric.Canvas, multiplier = 1): string =>
+  canvas.toDataURL({
     format: 'png',
     quality: 1,
     multiplier,
     enableRetinaScaling: false,
   });
-};

@@ -2,30 +2,45 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as fabric from 'fabric';
-import { EditorState, TextLayer } from '@/lib/types';
-import { createCanvas, addTextToCanvas, exportCanvasToPNG } from '@/lib/fabric-utils';
+import type { EditorState, TextStyleUpdate } from '@/lib/types';
+import {
+  BLANK_CANVAS,
+  addTextToCanvas,
+  createCanvas,
+  exportCanvasToPNG,
+  findLayer,
+  isTextObject,
+  readLayers,
+} from '@/lib/fabric-utils';
 import { ensureFontLoaded } from '@/lib/google-font';
 
 const MAX_HISTORY = 20;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_PIXELS = 16_000_000;
+const PREVIEW_MAX = { width: 800, height: 600 };
+const SNAP_DISTANCE = 20;
+const ROTATION_STEP = 15;
 
 const newLayerId = () => `text_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
+const initialState = (): EditorState => ({
+  backgroundImage: null,
+  textLayers: [],
+  selectedLayerId: null,
+  canvasWidth: BLANK_CANVAS.width,
+  canvasHeight: BLANK_CANVAS.height,
+  history: [],
+  historyIndex: -1,
+});
+
 export const useEditor = () => {
   const canvasRef = useRef<fabric.Canvas | null>(null);
-  const [editorState, setEditorState] = useState<EditorState>({
-    backgroundImage: null,
-    textLayers: [],
-    selectedLayerId: null,
-    canvasWidth: 800,
-    canvasHeight: 600,
-    history: [],
-    historyIndex: -1,
-  });
-
+  const [editorState, setEditorState] = useState<EditorState>(initialState);
   const [isLoading, setIsLoading] = useState(false);
-  const styleSaveTimer = useRef<number | null>(null);
-  const restoring = useRef(false);
+  const styleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoring = useRef(false);
+
   useEffect(() => () => {
     if (styleSaveTimer.current) clearTimeout(styleSaveTimer.current);
     if (modificationTimer.current) clearTimeout(modificationTimer.current);
@@ -33,87 +48,11 @@ export const useEditor = () => {
     canvasRef.current = null;
   }, []);
 
-  const initCanvas = useCallback((canvasElement: HTMLCanvasElement) => {
-    if (canvasRef.current) {
-      canvasRef.current.dispose();
-    }
-
-    canvasRef.current = createCanvas(canvasElement);
-    
-    // Clicking from one layer straight onto another fires selection:updated,
-    // not selection:created, so both must move the panel selection.
-    const syncSelection = (e: { selected?: fabric.FabricObject[] }) => {
-      const obj = e.selected?.[0] as (fabric.FabricObject & { id?: string }) | undefined;
-      if (obj && (obj.type === 'text' || obj.type === 'i-text')) {
-        setEditorState(prev => ({ ...prev, selectedLayerId: obj.id || null }));
-      }
-    };
-    canvasRef.current.on('selection:created', syncSelection);
-    canvasRef.current.on('selection:updated', syncSelection);
-
-    canvasRef.current.on('selection:cleared', () => {
-      setEditorState(prev => ({ ...prev, selectedLayerId: null }));
-    });
-
-    canvasRef.current.on('object:modified', () => {
-      if (modificationTimer.current) {
-        clearTimeout(modificationTimer.current);
-      }
-      
-      modificationTimer.current = setTimeout(() => {
-        if (canvasRef.current) {
-          const objects = canvasRef.current.getObjects();
-          const textLayers = objects
-            .filter(obj => obj.type === 'text' || obj.type === 'i-text')
-            .map(obj => {
-              if (!(obj as any).id) {
-                (obj as any).id = newLayerId();
-              }
-              return {
-                id: (obj as any).id || '',
-                text: (obj as any).text || '',
-                visible: obj.visible !== false,
-                locked: !obj.selectable || !obj.evented,
-              };
-            });
-          
-          setEditorState(prev => ({
-            ...prev,
-            textLayers,
-          }));
-        }
-        
-        saveToHistory();
-      }, 100);
-    });
-
-    canvasRef.current.on('object:moving', (e) => {
-      const obj = e.target;
-      if (obj && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const centerX = canvas.width! / 2;
-        const centerY = canvas.height! / 2;
-        
-        if (Math.abs(obj.left! - centerX) < 20) {
-          obj.left = centerX;
-        }
-        if (Math.abs(obj.top! - centerY) < 20) {
-          obj.top = centerY;
-        }
-      }
-    });
-
-    saveToHistory();
-  }, []);
-
   const saveToHistory = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || restoring.current) return;
     const canvasJSON = canvas.toObject(['id']) as Record<string, unknown>;
-    const textLayers: TextLayer[] = canvas.getObjects()
-      .filter(object => object.type === 'text' || object.type === 'i-text')
-      .map(object => { const text = object as fabric.IText & { id: string };
-        return { id: text.id, text: text.text, visible: text.visible, locked: !text.selectable }; });
+    const textLayers = readLayers(canvas);
     setEditorState(prev => {
       const { history, historyIndex, ...state } = prev;
       if (JSON.stringify(history[historyIndex]?.canvasJSON) === JSON.stringify(canvasJSON)) return prev;
@@ -122,75 +61,84 @@ export const useEditor = () => {
     });
   }, []);
 
+  const initCanvas = useCallback((canvasElement: HTMLCanvasElement) => {
+    canvasRef.current?.dispose();
+    const canvas = createCanvas(canvasElement);
+    canvasRef.current = canvas;
+
+    // Clicking from one layer straight onto another fires selection:updated,
+    // not selection:created, so both must move the panel selection.
+    const syncSelection = (e: { selected?: fabric.FabricObject[] }) => {
+      const obj = e.selected?.[0];
+      if (isTextObject(obj)) {
+        setEditorState(prev => ({ ...prev, selectedLayerId: obj.id || null }));
+      }
+    };
+    canvas.on('selection:created', syncSelection);
+    canvas.on('selection:updated', syncSelection);
+    canvas.on('selection:cleared', () => {
+      setEditorState(prev => ({ ...prev, selectedLayerId: null }));
+    });
+
+    // Drags and nudges fire this in bursts; record one history step per burst.
+    canvas.on('object:modified', () => {
+      if (modificationTimer.current) clearTimeout(modificationTimer.current);
+      modificationTimer.current = setTimeout(saveToHistory, 100);
+    });
+
+    canvas.on('object:moving', ({ target }) => {
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      if (Math.abs(target.left - centerX) < SNAP_DISTANCE) target.left = centerX;
+      if (Math.abs(target.top - centerY) < SNAP_DISTANCE) target.top = centerY;
+    });
+
+    saveToHistory();
+  }, [saveToHistory]);
+
   const loadImage = useCallback((file: File) => {
     if (!canvasRef.current) return;
 
-    if (file.type !== 'image/png' || file.size > 20 * 1024 * 1024) {
-      alert('Choose a PNG no larger than 20 MB.'); return;
+    if (file.type !== 'image/png' || file.size > MAX_UPLOAD_BYTES) {
+      alert('Choose a PNG no larger than 20 MB.');
+      return;
     }
     setIsLoading(true);
     const reader = new FileReader();
 
     reader.onload = (e) => {
       const imgSrc = e.target?.result as string;
-      
+
       fabric.Image.fromURL(imgSrc)
         .then((img) => {
-          
           const canvas = canvasRef.current;
-          if (!canvas) {
-            throw new Error('Canvas not available');
-          }
-          
-          if (!img || !img.width || !img.height || img.width * img.height > 16_000_000) {
+          if (!canvas) throw new Error('Canvas not available');
+          if (!img.width || !img.height || img.width * img.height > MAX_UPLOAD_PIXELS) {
             throw new Error('Invalid image dimensions');
           }
 
-
           canvas.discardActiveObject();
-          const objects = canvas.getObjects().slice();
-          objects.forEach(obj => {
-            try {
-              canvas.remove(obj);
-            } catch (error) {
-              console.warn('Error removing object during image load:', error);
-            }
-          });
+          canvas.remove(...canvas.getObjects());
 
-          const maxCanvasWidth = 800;
-          const maxCanvasHeight = 600;
-          const imageAspectRatio = img.width / img.height;
-          
-          let canvasWidth: number, canvasHeight: number;
-          
-          if (imageAspectRatio > maxCanvasWidth / maxCanvasHeight) {
-            // Image is wider than the max canvas aspect ratio
-            canvasWidth = maxCanvasWidth;
-            canvasHeight = maxCanvasWidth / imageAspectRatio;
-          } else {
-            // Image is taller than the max canvas aspect ratio
-            canvasHeight = maxCanvasHeight;
-            canvasWidth = maxCanvasHeight * imageAspectRatio;
-          }
-
+          // Fit the preview inside PREVIEW_MAX; export scales back up to the source size.
+          const scale = Math.min(PREVIEW_MAX.width / img.width, PREVIEW_MAX.height / img.height);
+          const canvasWidth = img.width * scale;
+          const canvasHeight = img.height * scale;
           canvas.setDimensions({ width: canvasWidth, height: canvasHeight });
-
-          // Scale the image to fit the canvas while maintaining aspect ratio
-          const scale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
 
           // Fabric 7 positions objects by their centre by default. Anchor the
           // background at its top-left corner, otherwise it is drawn centred on
           // (0, 0) and only its bottom-right quarter is visible and exported.
           img.set({ originX: 'left', originY: 'top', left: 0, top: 0, scaleX: scale, scaleY: scale });
           canvas.backgroundImage = img;
-          canvas.renderAll();
+          canvas.requestRenderAll();
 
           setEditorState(prev => ({
             ...prev,
             backgroundImage: imgSrc,
-            canvasWidth: canvasWidth,
+            canvasWidth,
+            canvasHeight,
             exportScale: img.width / canvasWidth,
-            canvasHeight: canvasHeight,
             textLayers: [],
             selectedLayerId: null,
           }));
@@ -205,26 +153,23 @@ export const useEditor = () => {
         });
     };
 
-    reader.onerror = (error) => {
-      console.error('FileReader error:', error);
+    reader.onerror = () => {
       setIsLoading(false);
       alert('Failed to read image file. Please check the file and try again.');
     };
-    
+
     reader.readAsDataURL(file);
   }, [saveToHistory]);
 
   const addTextLayer = useCallback(() => {
-    if (!canvasRef.current) return;
-
     const canvas = canvasRef.current;
-    const centerX = canvas.width! / 2;
-    const centerY = canvas.height! / 2;
+    if (!canvas) return;
 
     const textObject = addTextToCanvas(canvas, {
+      id: newLayerId(),
       text: 'Your Text Here',
-      left: centerX,
-      top: centerY,
+      left: canvas.width / 2,
+      top: canvas.height / 2,
       fontFamily: 'Arial',
       fontSize: 32,
       fontWeight: 'normal',
@@ -233,136 +178,53 @@ export const useEditor = () => {
       textAlign: 'center',
     });
 
-    (textObject as any).id = newLayerId();
-
     setEditorState(prev => ({
       ...prev,
-      selectedLayerId: (textObject as any).id!,
-      textLayers: [
-        ...prev.textLayers,
-        {
-          id: (textObject as any).id!,
-          text: textObject.text || '',
-          visible: true,
-          locked: false,
-        }
-      ]
+      selectedLayerId: textObject.id,
+      textLayers: [...prev.textLayers, { id: textObject.id, text: textObject.text, visible: true, locked: false }],
     }));
 
     saveToHistory();
   }, [saveToHistory]);
 
-  const updateTextProperties = useCallback((updates: Partial<{
-    text: string;
-    fontFamily: string;
-    fontSize: number;
-    fontWeight: string | number;
-    fill: string;
-    opacity: number;
-    textAlign: string;
-    rotation: 'left' | 'right';
-  }>) => {
-    if (!canvasRef.current || !editorState.selectedLayerId) return;
-
+  const updateTextProperties = useCallback((updates: TextStyleUpdate) => {
     const canvas = canvasRef.current;
-    const activeObject = canvas.getActiveObject() as any;
+    const target = canvas?.getActiveObject();
+    if (!canvas || !editorState.selectedLayerId || !isTextObject(target)) return;
 
-    // Ensure we only operate on text objects, not images or other objects
-    if (!activeObject || (activeObject.type !== 'text' && activeObject.type !== 'i-text')) {
-      console.warn('Attempted to update properties on non-text object');
-      return;
-    }
-
-    const family = (updates.fontFamily ?? activeObject.fontFamily) as string | undefined;
-    const weight = (updates.fontWeight ?? activeObject.fontWeight) as string | number | undefined;
-
+    const { rotation, ...style } = updates;
     const apply = () => {
-      try {
-        // Batch all property updates to minimize re-renders
-        const allUpdates: any = {};
-        let needsRender = false;
+      const changes: Record<string, unknown> = Object.fromEntries(
+        Object.entries(style).filter(([, value]) => value !== undefined),
+      );
+      if (rotation) changes.angle = (target.angle || 0) + (rotation === 'left' ? -ROTATION_STEP : ROTATION_STEP);
+      if (Object.keys(changes).length === 0) return;
 
-        // Handle rotation separately - only for text objects
-        if (updates.rotation && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
-          const currentAngle = activeObject.angle || 0;
-          const rotationAmount = 15; // degrees
-          const newAngle = updates.rotation === 'left' 
-            ? currentAngle - rotationAmount 
-            : currentAngle + rotationAmount;
-          
-          allUpdates.angle = newAngle;
-          needsRender = true;
-        }
+      target.set(changes);
+      target.initDimensions();
+      target.setCoords();
+      canvas.requestRenderAll();
 
-        // Handle other properties (excluding rotation)
-        const otherUpdates = Object.keys(updates)
-          .filter(key => key !== 'rotation')
-          .reduce((acc, key) => {
-            const value = updates[key as keyof typeof updates];
-            if (value !== undefined) {
-              acc[key] = value;
-              needsRender = true;
-            }
-            return acc;
-          }, {} as any);
-
-        // Apply all updates at once
-        if (Object.keys(allUpdates).length > 0 || Object.keys(otherUpdates).length > 0) {
-          activeObject.set({
-            ...allUpdates,
-            ...otherUpdates,
-            selectable: true,
-            evented: true,
-            hasControls: true,
-            hasBorders: true
-          });
-          
-          // Only render if we actually made changes
-          if (needsRender) {
-            // Batch coordinate updates
-            activeObject.initDimensions?.();
-            activeObject.setCoords();
-            canvas.renderAll();
-          }
-        }
-
-        // Debounced history save to prevent excessive saves
-        if (styleSaveTimer.current) window.clearTimeout(styleSaveTimer.current);
-        styleSaveTimer.current = window.setTimeout(() => {
-          // Trigger object:modified event to update state
-          canvas.fire('object:modified', { target: activeObject });
-          saveToHistory();
-        }, 300) as unknown as number;
-      } catch (error) {
-        console.error('Error updating text properties:', error);
-      }
+      // Sliders and typing send many updates; record one history step once they settle.
+      if (styleSaveTimer.current) clearTimeout(styleSaveTimer.current);
+      styleSaveTimer.current = setTimeout(() => canvas.fire('object:modified', { target }), 300);
     };
 
-    if (family) {
-      ensureFontLoaded(family, weight ?? 400).then(apply).catch(apply);
+    if (style.fontFamily || style.fontWeight) {
+      ensureFontLoaded(style.fontFamily ?? target.fontFamily, style.fontWeight ?? target.fontWeight).then(apply);
     } else {
       apply();
     }
-  }, [editorState.selectedLayerId, saveToHistory]);
+  }, [editorState.selectedLayerId]);
 
   const deleteSelectedLayer = useCallback(() => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const activeObject = canvas.getActiveObject();
+    const target = canvas?.getActiveObject();
+    if (!canvas || !target) return;
 
-    if (activeObject) {
-      const layerId = (activeObject as any).id;
-      canvas.remove(activeObject);
-      
-      // Update the textLayers state to remove the deleted layer
-      setEditorState(prev => ({
-        ...prev,
-        selectedLayerId: null,
-        textLayers: prev.textLayers.filter(layer => layer.id !== layerId)
-      }));
-      
-      saveToHistory();
-    }
+    canvas.remove(target);
+    setEditorState(prev => ({ ...prev, selectedLayerId: null }));
+    saveToHistory();
   }, [saveToHistory]);
 
   const restoreHistory = useCallback(async (index: number) => {
@@ -382,8 +244,14 @@ export const useEditor = () => {
       setIsLoading(false);
     }
   }, [editorState.history]);
-  const undo = useCallback(() => { if (editorState.historyIndex > 0) void restoreHistory(editorState.historyIndex - 1); }, [editorState.historyIndex, restoreHistory]);
-  const redo = useCallback(() => { if (editorState.historyIndex < editorState.history.length - 1) void restoreHistory(editorState.historyIndex + 1); }, [editorState.historyIndex, editorState.history.length, restoreHistory]);
+
+  const undo = useCallback(() => {
+    if (editorState.historyIndex > 0) void restoreHistory(editorState.historyIndex - 1);
+  }, [editorState.historyIndex, restoreHistory]);
+
+  const redo = useCallback(() => {
+    if (editorState.historyIndex < editorState.history.length - 1) void restoreHistory(editorState.historyIndex + 1);
+  }, [editorState.historyIndex, editorState.history.length, restoreHistory]);
 
   const exportToPNG = useCallback(() => {
     if (!canvasRef.current) return null;
@@ -391,192 +259,79 @@ export const useEditor = () => {
   }, [editorState.exportScale]);
 
   const selectLayer = useCallback((layerId: string) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects.find(obj => (obj as any).id === layerId);
-    if (targetObject) {
-      canvas.setActiveObject(targetObject);
-      canvas.renderAll();
-      setEditorState(prev => ({ ...prev, selectedLayerId: layerId }));
-    }
+    const layer = canvas && findLayer(canvas, layerId);
+    if (!canvas || !layer) return;
+    canvas.setActiveObject(layer);
+    canvas.requestRenderAll();
+    setEditorState(prev => ({ ...prev, selectedLayerId: layerId }));
   }, []);
 
   const reorderLayer = useCallback((fromIndex: number, toIndex: number) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects[fromIndex];
-    if (targetObject) {
-      canvas.moveObjectTo(targetObject, toIndex);
-      canvas.renderAll();
-      saveToHistory();
-    }
+    const target = canvas?.getObjects()[fromIndex];
+    if (!canvas || !target) return;
+    canvas.moveObjectTo(target, toIndex);
+    canvas.requestRenderAll();
+    saveToHistory();
   }, [saveToHistory]);
 
   const toggleLayerVisibility = useCallback((layerId: string) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects.find(obj => (obj as any).id === layerId);
-    if (targetObject) {
-      targetObject.visible = !targetObject.visible;
-      canvas.renderAll();
-      
-      // Update the textLayers state to reflect visibility change
-      setEditorState(prev => ({
-        ...prev,
-        textLayers: prev.textLayers.map(layer => 
-          layer.id === layerId 
-            ? { ...layer, visible: targetObject.visible } 
-            : layer
-        )
-      }));
-      
-      saveToHistory();
-    }
+    const layer = canvas && findLayer(canvas, layerId);
+    if (!canvas || !layer) return;
+    layer.visible = !layer.visible;
+    canvas.requestRenderAll();
+    saveToHistory();
   }, [saveToHistory]);
 
   const toggleLayerLock = useCallback((layerId: string) => {
-    if (!canvasRef.current) return;
-
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects.find(obj => (obj as any).id === layerId);
-    if (targetObject) {
-      targetObject.selectable = !targetObject.selectable;
-      targetObject.evented = !targetObject.evented;
-      canvas.renderAll();
-      
-      // Update the textLayers state to reflect lock change
-      setEditorState(prev => ({
-        ...prev,
-        textLayers: prev.textLayers.map(layer => 
-          layer.id === layerId 
-            ? { ...layer, locked: !targetObject.selectable } 
-            : layer
-        )
-      }));
-      
-      saveToHistory();
-    }
+    const layer = canvas && findLayer(canvas, layerId);
+    if (!canvas || !layer) return;
+    const locked = layer.selectable;
+    layer.set({ selectable: !locked, evented: !locked });
+    if (locked && canvas.getActiveObject() === layer) canvas.discardActiveObject();
+    canvas.requestRenderAll();
+    saveToHistory();
   }, [saveToHistory]);
 
   const deleteLayer = useCallback((layerId: string) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects.find(obj => (obj as any).id === layerId);
-    if (targetObject) {
-      canvas.remove(targetObject);
-      canvas.renderAll();
-      
-      // Update the textLayers state to remove the deleted layer
-      setEditorState(prev => ({
-        ...prev,
-        selectedLayerId: prev.selectedLayerId === layerId ? null : prev.selectedLayerId,
-        textLayers: prev.textLayers.filter(layer => layer.id !== layerId)
-      }));
-      
-      saveToHistory();
-    }
+    const layer = canvas && findLayer(canvas, layerId);
+    if (!canvas || !layer) return;
+    canvas.remove(layer);
+    setEditorState(prev => ({
+      ...prev,
+      selectedLayerId: prev.selectedLayerId === layerId ? null : prev.selectedLayerId,
+    }));
+    saveToHistory();
   }, [saveToHistory]);
 
   const duplicateLayer = useCallback((layerId: string) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects.find(obj => (obj as any).id === layerId) as fabric.Text;
-    if (targetObject) {
-      // Use the proper fabric.js v6 cloning method
-      targetObject.clone().then((clonedObject: any) => {
-        // Generate new unique ID
-        clonedObject.id = newLayerId();
-        
-        // Offset position to make it visible
-        clonedObject.set({
-          left: (clonedObject.left || 0) + 20,
-          top: (clonedObject.top || 0) + 20,
-          selectable: true,
-          evented: true,
-          hasControls: true,
-          hasBorders: true
-        });
-        
-        canvas.add(clonedObject);
-        canvas.setActiveObject(clonedObject);
-        canvas.renderAll();
-        
-        // Update textLayers in state
-        setEditorState(prev => ({
-          ...prev,
-          selectedLayerId: clonedObject.id!,
-          textLayers: [
-            ...prev.textLayers,
-            {
-              id: clonedObject.id!,
-              text: clonedObject.text || '',
-              visible: true,
-              locked: false,
-            }
-          ]
-        }));
-        
-        saveToHistory();
-      }).catch((error) => {
-        console.error('Failed to duplicate layer:', error);
-      });
-    }
+    const layer = canvas && findLayer(canvas, layerId);
+    if (!canvas || !layer) return;
+    void layer.clone().then((copy) => {
+      copy.id = newLayerId();
+      copy.set({ left: copy.left + 20, top: copy.top + 20, selectable: true, evented: true });
+      canvas.add(copy);
+      canvas.setActiveObject(copy);
+      canvas.requestRenderAll();
+      setEditorState(prev => ({ ...prev, selectedLayerId: copy.id }));
+      saveToHistory();
+    });
   }, [saveToHistory]);
 
   const reset = useCallback(() => {
-    if (!canvasRef.current) return;
-
     const canvas = canvasRef.current;
-
-    // Clear selection first to avoid issues
+    if (!canvas) return;
     canvas.discardActiveObject();
-    
-    // Get all objects and dispose them properly
-    const objects = canvas.getObjects().slice(); // Create a copy of the array
-    objects.forEach(obj => {
-      try {
-        canvas.remove(obj);
-        // Dispose object if it has a dispose method
-        if (obj && typeof (obj as any).dispose === 'function') {
-          (obj as any).dispose();
-        }
-      } catch (error) {
-        console.warn('Error removing object:', error);
-      }
-    });
-
-    // Clear any remaining objects
-    try {
-      canvas.clear();
-    } catch (error) {
-      console.warn('Error during canvas clear:', error);
-    }
-
-    // Reset canvas properties
-    canvas.setDimensions({ width: 800, height: 600 });
-    canvas.set('backgroundColor', '#f8f9fa');
-    canvas.backgroundImage = undefined;
-    
-    // Force render
-    canvas.renderAll();
-
-    const initialState: EditorState = {
-      backgroundImage: null,
-      textLayers: [],
-      selectedLayerId: null,
-      canvasWidth: 800,
-      canvasHeight: 600,
-      history: [],
-      historyIndex: -1,
-    };
-
-    setEditorState(initialState);
+    canvas.clear();
+    canvas.setDimensions(BLANK_CANVAS);
+    canvas.backgroundColor = BLANK_CANVAS.color;
+    canvas.requestRenderAll();
+    setEditorState(initialState());
     saveToHistory();
   }, [saveToHistory]);
 

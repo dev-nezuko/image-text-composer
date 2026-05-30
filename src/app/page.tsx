@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useEditor } from '../hooks/use-editor';
 import { Toolbar } from '@/components/editor/toolbar';
 import { CanvasContainer } from '@/components/editor/canvas-container';
 import { PropertiesPanel } from '@/components/editor/properties-panel';
 import { LayerPanel } from '@/components/editor/layer-panel';
-import * as fabric from 'fabric';
+import { isTextObject } from '@/lib/fabric-utils';
+import type { SelectedText, TextStyleUpdate } from '@/lib/types';
 
 export default function HomePage() {
 	const {
@@ -30,29 +31,22 @@ export default function HomePage() {
 		duplicateLayer,
 	} = useEditor();
 
-	const [selectedObjectData, setSelectedObjectData] = useState<any>(null);
+	const [selectedObjectData, setSelectedObjectData] = useState<SelectedText | null>(null);
 
-	const getSelectedObjectData = useCallback(() => {
-		if (canvasRef.current) {
-			const canvas = canvasRef.current;
-			const activeObject = canvas.getActiveObject();
-
-			if (activeObject && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
-				const t = activeObject as any;
-				return {
-					id: t.id ?? '',
-					text: t.text ?? '',
-					fontFamily: t.fontFamily,
-					fontSize: t.fontSize,
-					fontWeight: t.fontWeight,
-					fill: t.fill,
-					opacity: t.opacity,
-					textAlign: t.textAlign,
-				};
-			}
-		}
-		return null;
-	}, []);
+	const getSelectedObjectData = useCallback((): SelectedText | null => {
+		const active = canvasRef.current?.getActiveObject();
+		if (!isTextObject(active)) return null;
+		return {
+			id: active.id ?? '',
+			text: active.text ?? '',
+			fontFamily: active.fontFamily,
+			fontSize: active.fontSize,
+			fontWeight: active.fontWeight,
+			fill: typeof active.fill === 'string' ? active.fill : '#000000',
+			opacity: active.opacity,
+			textAlign: active.textAlign,
+		};
+	}, [canvasRef]);
 
 	useEffect(() => {
 		setSelectedObjectData(getSelectedObjectData());
@@ -65,11 +59,8 @@ export default function HomePage() {
 				!!target &&
 				(['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
 
-			const activeObj = canvasRef.current?.getActiveObject() as any;
-			const isITextEditing =
-				!!activeObj &&
-				(activeObj.type === 'i-text' || activeObj.type === 'text') &&
-				activeObj.isEditing;
+			const activeObj = canvasRef.current?.getActiveObject();
+			const isITextEditing = isTextObject(activeObj) && activeObj.isEditing;
 
 			if (isFormElement || isITextEditing) {
 				return;
@@ -134,7 +125,7 @@ export default function HomePage() {
 
 		window.addEventListener('keydown', handleKeyDown);
 		return () => window.removeEventListener('keydown', handleKeyDown);
-	}, [undo, redo, addTextLayer, deleteSelectedLayer, editorState.selectedLayerId]);
+	}, [canvasRef, undo, redo, addTextLayer, deleteSelectedLayer, editorState.selectedLayerId]);
 
 	const handleExport = () => {
 		const dataURL = exportToPNG();
@@ -149,29 +140,12 @@ export default function HomePage() {
 	const canUndo = editorState.historyIndex > 0;
 	const canRedo = editorState.historyIndex < editorState.history.length - 1;
 
-	const handleUpdateText = useCallback((updates: Partial<{
-		text: string;
-		fontFamily: string;
-		fontSize: number;
-		fontWeight: string;
-		fill: string;
-		opacity: number;
-		textAlign: string;
-		rotation: 'left' | 'right';
-	}>) => {
+	const handleUpdateText = useCallback((updates: TextStyleUpdate) => {
 		updateTextProperties(updates);
-		
-		const displayUpdates = Object.keys(updates)
-			.filter(key => key !== 'rotation')
-			.reduce((acc, key) => {
-				acc[key] = updates[key as keyof typeof updates];
-				return acc;
-			}, {} as any);
-			
+		const displayUpdates = { ...updates };
+		delete displayUpdates.rotation;
 		if (Object.keys(displayUpdates).length > 0) {
-			setSelectedObjectData((prev: typeof selectedObjectData) =>
-				prev ? { ...prev, ...displayUpdates } : prev
-			);
+			setSelectedObjectData(prev => (prev ? { ...prev, ...displayUpdates } : prev));
 		}
 	}, [updateTextProperties]);
 

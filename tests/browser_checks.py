@@ -30,7 +30,9 @@ def main():
         page.locator('#image-upload').set_input_files(image)
         page.wait_for_function("document.querySelector('canvas.lower-canvas')?.width === 1600")
         # The background must cover the whole canvas, not just one quadrant.
-        corner=page.evaluate("(() => { const c = document.querySelector('canvas.lower-canvas'); return Array.from(c.getContext('2d').getImageData(c.width - 4, c.height - 4, 1, 1).data); })()")
+        corner_js="(() => { const c = document.querySelector('canvas.lower-canvas'); return Array.from(c.getContext('2d').getImageData(c.width - 4, c.height - 4, 1, 1).data); })()"
+        page.wait_for_function(corner_js+"[3] === 255")  # rendering happens on the next animation frame
+        corner=page.evaluate(corner_js)
         assert abs(corner[0]-236)<=3 and abs(corner[2]-202)<=3,f'Bottom-right corner shows {corner}, not the uploaded image'
         def export(name):
           with page.expect_download() as pending:page.get_by_role('button',name='Export',exact=True).click()

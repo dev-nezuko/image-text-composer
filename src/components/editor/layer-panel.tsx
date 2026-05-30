@@ -14,12 +14,7 @@ import {
   Copy
 } from 'lucide-react';
 
-interface Layer {
-  id: string;
-  text: string;
-  visible: boolean;
-  locked: boolean;
-}
+import type { TextLayer as Layer } from '@/lib/types';
 
 interface LayerPanelProps {
   layers: Layer[];
@@ -292,4 +287,5 @@ export const LayerPanel = memo(({
   ]);
 
   return layerList;
-}); 
+});
+LayerPanel.displayName = 'LayerPanel';
