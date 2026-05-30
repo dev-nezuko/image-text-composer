@@ -13,6 +13,8 @@ import {
   readLayers,
 } from '@/lib/fabric-utils';
 import { ensureFontLoaded } from '@/lib/google-font';
+import { pushSnapshot } from '@/lib/history';
+import { fitPreview } from '@/lib/preview';
 
 const MAX_HISTORY = 20;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -55,9 +57,8 @@ export const useEditor = () => {
     const textLayers = readLayers(canvas);
     setEditorState(prev => {
       const { history, historyIndex, ...state } = prev;
-      if (JSON.stringify(history[historyIndex]?.canvasJSON) === JSON.stringify(canvasJSON)) return prev;
-      const next = [...history.slice(0, historyIndex + 1), { ...state, textLayers, canvasJSON }].slice(-MAX_HISTORY);
-      return { ...prev, textLayers, history: next, historyIndex: next.length - 1 };
+      const cursor = pushSnapshot({ history, historyIndex }, { ...state, textLayers, canvasJSON }, MAX_HISTORY);
+      return cursor ? { ...prev, textLayers, ...cursor } : prev;
     });
   }, []);
 
@@ -121,9 +122,7 @@ export const useEditor = () => {
           canvas.remove(...canvas.getObjects());
 
           // Fit the preview inside PREVIEW_MAX; export scales back up to the source size.
-          const scale = Math.min(PREVIEW_MAX.width / img.width, PREVIEW_MAX.height / img.height);
-          const canvasWidth = img.width * scale;
-          const canvasHeight = img.height * scale;
+          const { width: canvasWidth, height: canvasHeight, scale } = fitPreview(img, PREVIEW_MAX);
           canvas.setDimensions({ width: canvasWidth, height: canvasHeight });
 
           // Fabric 7 positions objects by their centre by default. Anchor the
