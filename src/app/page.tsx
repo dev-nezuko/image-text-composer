@@ -82,10 +82,6 @@ export default function HomePage() {
 						e.preventDefault();
 						redo();
 						break;
-					case 't':
-						e.preventDefault();
-						addTextLayer();
-						break;
 				}
 			}
 
@@ -128,7 +124,7 @@ export default function HomePage() {
 
 		window.addEventListener('keydown', handleKeyDown);
 		return () => window.removeEventListener('keydown', handleKeyDown);
-	}, [canvasRef, undo, redo, addTextLayer, deleteSelectedLayer, editorState.selectedLayerId]);
+	}, [canvasRef, undo, redo, deleteSelectedLayer, editorState.selectedLayerId]);
 
 	const handleExport = () => {
 		const dataURL = exportToPNG();

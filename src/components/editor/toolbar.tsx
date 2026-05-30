@@ -76,7 +76,7 @@ export const Toolbar = ({
 			</div>
 
 			<div className={groupClass}>
-				<Button onClick={onAddText} title="Add text (Ctrl+T)">
+				<Button onClick={onAddText}>
 					<Plus className="mr-2 h-4 w-4" aria-hidden />
 					Add Text
 				</Button>
