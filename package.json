@@ -10,33 +10,33 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@radix-ui/react-label": "^2.1.0",
-    "@radix-ui/react-popover": "^1.1.1",
-    "@radix-ui/react-select": "^2.1.1",
-    "@radix-ui/react-slider": "^1.2.0",
-    "@radix-ui/react-slot": "^1.1.0",
-    "class-variance-authority": "^0.7.0",
+    "@radix-ui/react-label": "^2.1.17",
+    "@radix-ui/react-popover": "^1.3.1",
+    "@radix-ui/react-select": "^2.4.1",
+    "@radix-ui/react-slider": "^1.6.1",
+    "@radix-ui/react-slot": "^1.5.0",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fabric": "^7.4.0",
-    "lucide-react": "^0.446.0",
-    "next": "^15.5.28",
-    "react": "18.2.0",
-    "react-colorful": "^5.6.1",
-    "react-dom": "18.2.0",
-    "tailwind-merge": "^2.5.2",
+    "lucide-react": "^1.70.0",
+    "next": "^15.5.29",
+    "react": "^18.3.1",
+    "react-colorful": "^5.8.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.6.1",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
     "@types/node": "^22.20.5",
-    "@types/react": "^18.2.22",
-    "@types/react-dom": "^18.2.7",
-    "autoprefixer": "^10.4.21",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.6.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.29",
-    "postcss": "^8.5.23",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.2.2",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.9",
     "vitest": "^5.1.0"
   },
   "description": "A browser image text editor: upload a PNG, add styled text layers on a Fabric.js canvas, and export at original resolution.",
@@ -46,5 +46,8 @@
       "postcss": "^8.5.32"
     },
     "source-map-js": "^1.2.2"
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }

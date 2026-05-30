@@ -8,7 +8,7 @@ import threading
 import zlib
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, expect, sync_playwright
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE_SIZE = (1600, 800)
@@ -93,10 +93,11 @@ def desktop_checks(browser, base_url, folder: Path, image: Path, errors):
     page.wait_for_timeout(300)
     content.fill('Second caption')
     layer('Second caption').wait_for()
+    # The panel switches one render after the click, so wait with expect() rather than read once.
     layer('Your Text Here').click()
-    assert content.input_value() == 'Your Text Here', 'Content field must show the newly selected layer'
+    expect(content).to_have_value('Your Text Here')
     layer('Second caption').click()
-    assert content.input_value() == 'Second caption'
+    expect(content).to_have_value('Second caption')
 
     # A non-PNG is refused with an inline message rather than a blocking alert.
     text_file = folder / 'notes.txt'
