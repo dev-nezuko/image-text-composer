@@ -40,6 +40,7 @@ export default function HomePage() {
 			if (activeObject && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
 				const t = activeObject as any;
 				return {
+					id: t.id ?? '',
 					text: t.text ?? '',
 					fontFamily: t.fontFamily,
 					fontSize: t.fontSize,
@@ -54,12 +55,7 @@ export default function HomePage() {
 	}, []);
 
 	useEffect(() => {
-		const timeoutId = setTimeout(() => {
-			const data = getSelectedObjectData();
-			setSelectedObjectData(data);
-		}, 50);
-
-		return () => clearTimeout(timeoutId);
+		setSelectedObjectData(getSelectedObjectData());
 	}, [editorState.selectedLayerId, getSelectedObjectData]);
 
 	useEffect(() => {

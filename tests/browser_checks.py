@@ -1,6 +1,7 @@
 """Exercise the built editor in a real browser; no hosted services required."""
 import argparse
 import functools
+import re
 import http.server
 from pathlib import Path
 import struct
@@ -28,6 +29,9 @@ def main():
         page.goto('http://127.0.0.1:'+str(server.server_port),wait_until='networkidle')
         page.locator('#image-upload').set_input_files(image)
         page.wait_for_function("document.querySelector('canvas.lower-canvas')?.width === 1600")
+        # The background must cover the whole canvas, not just one quadrant.
+        corner=page.evaluate("(() => { const c = document.querySelector('canvas.lower-canvas'); return Array.from(c.getContext('2d').getImageData(c.width - 4, c.height - 4, 1, 1).data); })()")
+        assert abs(corner[0]-236)<=3 and abs(corner[2]-202)<=3,f'Bottom-right corner shows {corner}, not the uploaded image'
         def export(name):
           with page.expect_download() as pending:page.get_by_role('button',name='Export',exact=True).click()
           dest=Path(folder)/name;pending.value.save_as(dest);data=dest.read_bytes()
@@ -47,13 +51,23 @@ def main():
         page.get_by_role('button',name='Undo',exact=True).click();page.get_by_text('No layers yet',exact=True).wait_for()
         page.get_by_role('button',name='Add Text',exact=True).click();page.get_by_text('1 layer',exact=True).wait_for()
         assert page.get_by_role('button',name='Redo',exact=True).is_disabled()
+        # The properties panel follows the selected layer instead of keeping stale field values.
+        content=page.get_by_label('Content',exact=True)
+        page.get_by_role('button',name='Add Text',exact=True).click();page.get_by_text('2 layers',exact=True).wait_for()
+        page.wait_for_timeout(300)
+        layer=lambda text:page.locator('p',has_text=re.compile('^'+re.escape(text)+'$'))
+        content.fill('Second caption');layer('Second caption').wait_for()
+        layer('Your Text Here').click()
+        assert content.input_value()=='Your Text Here','Content field must show the newly selected layer'
+        layer('Second caption').click()
+        assert content.input_value()=='Second caption'
         if args.capture:
           page.get_by_label('Content',exact=True).fill('Summer studio')
           page.wait_for_timeout(800)
           dest=repo/'docs/screenshots';dest.mkdir(parents=True,exist_ok=True)
           page.screenshot(path=str(dest/'editor.png'),full_page=True)
         browser.close()
-        print('PASS: original-resolution retina export, pixel-verified undo/redo, and redo-branch invalidation')
+        print('PASS: full-canvas background, original-resolution retina export, pixel-verified undo/redo, redo-branch invalidation, per-layer properties')
     finally:server.shutdown();server.server_close()
 
 if __name__=='__main__':main()

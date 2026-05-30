@@ -9,12 +9,13 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { HexColorPicker } from 'react-colorful';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { loadGoogleFonts, loadFont } from '@/lib/google-font';
+import { loadGoogleFonts } from '@/lib/google-font';
 import { GoogleFont } from '@/lib/types';
 import { Palette, AlignLeft, AlignCenter, AlignRight, RotateCcw, RotateCw, Type } from 'lucide-react';
 
 interface PropertiesPanelProps {
 	selectedObjectData?: {
+		id: string;
 		text: string;
 		fontFamily: string;
 		fontSize: number;
@@ -67,7 +68,10 @@ const useFonts = () => {
 };
 
 const useDebouncedUpdate = (callback: (updates: any) => void, delay: number = 100) => {
-	const timeoutRef = useRef<NodeJS.Timeout>();
+	const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+	// A pending edit must not land on whichever layer is selected next.
+	useEffect(() => () => clearTimeout(timeoutRef.current), []);
 
 	return useCallback((updates: any) => {
 		if (timeoutRef.current) {
@@ -116,15 +120,10 @@ const FontFamilySection = memo(({
 	fontsLoading: boolean; 
 	onUpdate: (updates: any) => void; 
 }) => {
-	const handleFontChange = useCallback(async (newFontFamily: string) => {
-		await loadFont(newFontFamily);
-		onUpdate({ fontFamily: newFontFamily });
-	}, [onUpdate]);
-
 	return (
 		<div className="space-y-2">
 			<Label className="text-gray-200 text-sm font-medium">Font Family</Label>
-			<Select value={fontFamily} onValueChange={handleFontChange}>
+			<Select value={fontFamily} onValueChange={(family) => onUpdate({ fontFamily: family })}>
 				<SelectTrigger className="bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20">
 					<SelectValue placeholder="Select font..." />
 				</SelectTrigger>
@@ -153,14 +152,25 @@ const FontSizeSection = memo(({
 	onUpdate: (updates: any) => void; 
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
+	const [size, setSize] = useState(fontSize);
+
+	useEffect(() => {
+		setSize(fontSize);
+	}, [fontSize]);
+
+	const changeSize = (value: number) => {
+		const clamped = Math.min(200, Math.max(8, value));
+		setSize(clamped);
+		debouncedUpdate({ fontSize: clamped });
+	};
 
 	return (
 		<div className="space-y-2">
 			<Label className="text-gray-200 text-sm font-medium">Font Size</Label>
 			<div className="flex items-center gap-3">
 				<Slider
-					value={[fontSize]}
-					onValueChange={([value]) => debouncedUpdate({ fontSize: value })}
+					value={[size]}
+					onValueChange={([value]) => changeSize(value)}
 					max={200}
 					min={8}
 					step={1}
@@ -168,8 +178,8 @@ const FontSizeSection = memo(({
 				/>
 				<Input
 					type="number"
-					defaultValue={fontSize}
-					onChange={(e) => debouncedUpdate({ fontSize: parseInt(e.target.value) || 8 })}
+					value={size}
+					onChange={(e) => changeSize(Number.parseInt(e.target.value, 10) || 8)}
 					className="w-16 bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20"
 					min={8}
 					max={200}
@@ -386,7 +396,8 @@ export const PropertiesPanel = memo(({ selectedObjectData, onUpdateText }: Prope
 		}
 
 		return (
-			<div className="p-6 space-y-6">
+			// Keyed by layer so uncontrolled fields reset when the selection changes.
+			<div key={selectedObjectData.id} className="p-6 space-y-6">
 				<TextContentSection 
 					text={selectedObjectData.text} 
 					onUpdate={onUpdateText} 

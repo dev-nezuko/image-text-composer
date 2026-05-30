@@ -39,22 +39,11 @@ export const Toolbar = ({
 	hasSelection,
 }: ToolbarProps) => {
 
-	
 	const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
-		if (!file) return;
-
-		// More permissive image check for debugging
-		const isImageFile = file.type.startsWith('image/') ||
-			file.name.toLowerCase().match(/\.(png|jpg|jpeg|gif|bmp|webp)$/);
-
-		if (!isImageFile) {
-			alert('Please upload an image file');
-			return;
-		}
-
-		console.log('Loading image file:', file.name, file.type, file.size); // Debug log
-		onImageUpload(file);
+		// Clear the input so choosing the same file again still fires onChange.
+		e.target.value = '';
+		if (file) onImageUpload(file);
 	};
 
 	return (

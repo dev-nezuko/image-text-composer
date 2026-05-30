@@ -1,10 +1,16 @@
 import type { GoogleFont } from '@/lib/types';
 import { CURATED_FONTS } from '@/lib/curated-fonts';
 
-const fontsLoaded = new Set<string>();
+// Installed on practically every system, so they need no stylesheet. New text
+// layers default to Arial; listing these keeps the picker showing a value.
+export const WEB_SAFE_FONTS: GoogleFont[] = [
+  { family: 'Arial', variants: ['400', '700'], category: 'web-safe' },
+  { family: 'Georgia', variants: ['400', '700'], category: 'web-safe' },
+  { family: 'Courier New', variants: ['400', '700'], category: 'web-safe' },
+  { family: 'Impact', variants: ['400'], category: 'web-safe' },
+];
 
-// Was two families. See curated-fonts.ts for why that mattered.
-const FALLBACK_FONTS: GoogleFont[] = CURATED_FONTS;
+const FALLBACK_FONTS: GoogleFont[] = [...WEB_SAFE_FONTS, ...CURATED_FONTS];
 
 export async function loadGoogleFonts(): Promise<GoogleFont[]> {
   const key = process.env.NEXT_PUBLIC_GOOGLE_FONTS_API_KEY;
@@ -12,70 +18,49 @@ export async function loadGoogleFonts(): Promise<GoogleFont[]> {
   const res = await fetch(`https://webfonts.googleapis.com/v1/webfonts?key=${key}&sort=alpha`);
   if (!res.ok) return FALLBACK_FONTS;
   const data = await res.json();
-  return (data.items ?? []) as GoogleFont[];
+  return [...WEB_SAFE_FONTS, ...((data.items ?? []) as GoogleFont[])];
 }
 
-export const loadFont = async (fontFamily: string): Promise<void> => {
-  if (fontsLoaded.has(fontFamily) || isWebSafeFont(fontFamily)) {
-    return;
-  }
+export const isWebSafeFont = (family: string): boolean =>
+  WEB_SAFE_FONTS.some(font => font.family === family) ||
+  ['Helvetica', 'Times New Roman', 'Times', 'Courier', 'Verdana', 'Trebuchet MS', 'Arial Black'].includes(family);
 
-  try {
-    const link = document.createElement('link');
-    link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(' ', '+')}:wght@100;200;300;400;500;600;700;800;900&display=swap`;
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
+/** Maps Fabric/CSS weights ('normal', 'bold', '600', 600) to a numeric weight. */
+export function numericFontWeight(weight: string | number | undefined): number {
+  if (typeof weight === 'number') return weight;
+  if (weight === 'bold') return 700;
+  const parsed = Number.parseInt(weight ?? '', 10);
+  return Number.isFinite(parsed) ? parsed : 400;
+}
 
-    // Wait for font to load
-    await new Promise((resolve) => {
-      const checkFont = () => {
-        if (document.fonts.check(`16px "${fontFamily}"`)) {
-          resolve(void 0);
-        } else {
-          setTimeout(checkFont, 100);
-        }
-      };
-      checkFont();
+const stylesheets = new Map<string, Promise<void>>();
+
+// Resolves once the Google Fonts stylesheet has loaded (or failed), so the
+// @font-face rules exist before document.fonts.load is asked for the face.
+function loadStylesheet(family: string, weight: number): Promise<void> {
+  const href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${weight}&display=swap`;
+  let pending = stylesheets.get(href);
+  if (!pending) {
+    pending = new Promise(resolve => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.onload = link.onerror = () => resolve();
+      document.head.appendChild(link);
     });
-
-    fontsLoaded.add(fontFamily);
-  } catch (error) {
-    console.error(`Failed to load font ${fontFamily}:`, error);
+    stylesheets.set(href, pending);
   }
-};
+  return pending;
+}
 
 export async function ensureFontLoaded(family: string, weight: string | number = 400) {
-  const w = typeof weight === 'number' ? weight : (weight === 'bold' ? 700 : 400);
-  const id = `gf-${family.replace(/\s+/g, '-').toLowerCase()}-${w}`;
-  if (!document.getElementById(id)) {
-    const link = document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${w}&display=swap`;
-    document.head.appendChild(link);
-  }
+  if (isWebSafeFont(family)) return;
+  const w = numericFontWeight(weight);
+  await loadStylesheet(family, w);
   try {
-    await (document as any).fonts.load(`${w} 16px ${family}`);
-    await (document as any).fonts.ready;
-  } catch {}
+    // Quoted, because families such as "Source Sans 3" are not valid bare identifiers.
+    await document.fonts.load(`${w} 16px "${family}"`);
+  } catch {
+    // Offline or blocked: Fabric falls back to the browser's default face.
+  }
 }
-
-const isWebSafeFont = (fontFamily: string): boolean => {
-  const webSafeFonts = [
-    'Arial', 'Helvetica', 'Times New Roman', 'Times', 'Courier New', 'Courier',
-    'Verdana', 'Georgia', 'Palatino', 'Garamond', 'Bookman', 'Comic Sans MS',
-    'Trebuchet MS', 'Arial Black', 'Impact'
-  ];
-  return webSafeFonts.includes(fontFamily);
-};
-
-const getCommonFonts = (): GoogleFont[] => [
-  { family: 'Arial', variants: ['400', '700'], category: 'sans-serif' },
-  { family: 'Roboto', variants: ['100', '300', '400', '500', '700', '900'], category: 'sans-serif' },
-  { family: 'Open Sans', variants: ['300', '400', '600', '700'], category: 'sans-serif' },
-  { family: 'Lato', variants: ['100', '300', '400', '700', '900'], category: 'sans-serif' },
-  { family: 'Montserrat', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
-  { family: 'Poppins', variants: ['100', '200', '300', '400', '500', '600', '700', '800', '900'], category: 'sans-serif' },
-  { family: 'Source Sans Pro', variants: ['200', '300', '400', '600', '700', '900'], category: 'sans-serif' },
-  { family: 'Oswald', variants: ['200', '300', '400', '500', '600', '700'], category: 'sans-serif' },
-];

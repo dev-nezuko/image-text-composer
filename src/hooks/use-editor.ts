@@ -8,6 +8,8 @@ import { ensureFontLoaded } from '@/lib/google-font';
 
 const MAX_HISTORY = 20;
 
+const newLayerId = () => `text_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
 export const useEditor = () => {
   const canvasRef = useRef<fabric.Canvas | null>(null);
   const [editorState, setEditorState] = useState<EditorState>({
@@ -38,19 +40,20 @@ export const useEditor = () => {
 
     canvasRef.current = createCanvas(canvasElement);
     
-    canvasRef.current.on('selection:created', (e) => {
-      if (e.selected && e.selected[0]) {
-        const obj = e.selected[0] as any;
-        if (obj.type === 'text' || obj.type === 'i-text') {
-          setEditorState(prev => ({ ...prev, selectedLayerId: obj.id || null }));
-        }
+    // Clicking from one layer straight onto another fires selection:updated,
+    // not selection:created, so both must move the panel selection.
+    const syncSelection = (e: { selected?: fabric.FabricObject[] }) => {
+      const obj = e.selected?.[0] as (fabric.FabricObject & { id?: string }) | undefined;
+      if (obj && (obj.type === 'text' || obj.type === 'i-text')) {
+        setEditorState(prev => ({ ...prev, selectedLayerId: obj.id || null }));
       }
-    });
+    };
+    canvasRef.current.on('selection:created', syncSelection);
+    canvasRef.current.on('selection:updated', syncSelection);
 
     canvasRef.current.on('selection:cleared', () => {
       setEditorState(prev => ({ ...prev, selectedLayerId: null }));
     });
-
 
     canvasRef.current.on('object:modified', () => {
       if (modificationTimer.current) {
@@ -64,7 +67,7 @@ export const useEditor = () => {
             .filter(obj => obj.type === 'text' || obj.type === 'i-text')
             .map(obj => {
               if (!(obj as any).id) {
-                (obj as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                (obj as any).id = newLayerId();
               }
               return {
                 id: (obj as any).id || '',
@@ -170,23 +173,16 @@ export const useEditor = () => {
             canvasWidth = maxCanvasHeight * imageAspectRatio;
           }
 
-          // Set canvas dimensions to calculated viewable size
           canvas.setDimensions({ width: canvasWidth, height: canvasHeight });
 
           // Scale the image to fit the canvas while maintaining aspect ratio
-          const scaleX = canvasWidth / img.width;
-          const scaleY = canvasHeight / img.height;
-          const scale = Math.min(scaleX, scaleY);
-          
-          img.scaleX = scale;
-          img.scaleY = scale;
-          
-          // Center the image on the canvas
-          img.left = (canvasWidth - img.width * scale) / 2;
-          img.top = (canvasHeight - img.height * scale) / 2;
+          const scale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
 
-          // Set the image as background
-          (canvas as any).backgroundImage = img;
+          // Fabric 7 positions objects by their centre by default. Anchor the
+          // background at its top-left corner, otherwise it is drawn centred on
+          // (0, 0) and only its bottom-right quarter is visible and exported.
+          img.set({ originX: 'left', originY: 'top', left: 0, top: 0, scaleX: scale, scaleY: scale });
+          canvas.backgroundImage = img;
           canvas.renderAll();
 
           setEditorState(prev => ({
@@ -195,7 +191,7 @@ export const useEditor = () => {
             canvasWidth: canvasWidth,
             exportScale: img.width / canvasWidth,
             canvasHeight: canvasHeight,
-            textLayers: [], // Clear text layers when new image is loaded
+            textLayers: [],
             selectedLayerId: null,
           }));
 
@@ -218,7 +214,6 @@ export const useEditor = () => {
     reader.readAsDataURL(file);
   }, [saveToHistory]);
 
-  // Add text layer
   const addTextLayer = useCallback(() => {
     if (!canvasRef.current) return;
 
@@ -228,8 +223,8 @@ export const useEditor = () => {
 
     const textObject = addTextToCanvas(canvas, {
       text: 'Your Text Here',
-      left: centerX - 50,
-      top: centerY - 20,
+      left: centerX,
+      top: centerY,
       fontFamily: 'Arial',
       fontSize: 32,
       fontWeight: 'normal',
@@ -238,17 +233,7 @@ export const useEditor = () => {
       textAlign: 'center',
     });
 
-    (textObject as any).enterEditing?.();
-    (textObject as any).selectAll?.();
-    canvas.renderAll();
-
-    (textObject as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Ensure text is on top
-    canvas.remove(textObject);
-    canvas.add(textObject);
-    canvas.setActiveObject(textObject as any);
-    canvas.renderAll();
+    (textObject as any).id = newLayerId();
 
     setEditorState(prev => ({
       ...prev,
@@ -267,7 +252,6 @@ export const useEditor = () => {
     saveToHistory();
   }, [saveToHistory]);
 
-  // Update text properties with performance optimizations
   const updateTextProperties = useCallback((updates: Partial<{
     text: string;
     fontFamily: string;
@@ -361,7 +345,6 @@ export const useEditor = () => {
     }
   }, [editorState.selectedLayerId, saveToHistory]);
 
-  // Delete selected layer
   const deleteSelectedLayer = useCallback(() => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -402,13 +385,11 @@ export const useEditor = () => {
   const undo = useCallback(() => { if (editorState.historyIndex > 0) void restoreHistory(editorState.historyIndex - 1); }, [editorState.historyIndex, restoreHistory]);
   const redo = useCallback(() => { if (editorState.historyIndex < editorState.history.length - 1) void restoreHistory(editorState.historyIndex + 1); }, [editorState.historyIndex, editorState.history.length, restoreHistory]);
 
-  // Export canvas
   const exportToPNG = useCallback(() => {
     if (!canvasRef.current) return null;
     return exportCanvasToPNG(canvasRef.current, editorState.exportScale || 1);
   }, [editorState.exportScale]);
 
-  // Layer management functions
   const selectLayer = useCallback((layerId: string) => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -510,7 +491,7 @@ export const useEditor = () => {
       // Use the proper fabric.js v6 cloning method
       targetObject.clone().then((clonedObject: any) => {
         // Generate new unique ID
-        clonedObject.id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        clonedObject.id = newLayerId();
         
         // Offset position to make it visible
         clonedObject.set({
@@ -548,7 +529,6 @@ export const useEditor = () => {
     }
   }, [saveToHistory]);
 
-  // Reset editor
   const reset = useCallback(() => {
     if (!canvasRef.current) return;
 
@@ -581,7 +561,7 @@ export const useEditor = () => {
     // Reset canvas properties
     canvas.setDimensions({ width: 800, height: 600 });
     canvas.set('backgroundColor', '#f8f9fa');
-    (canvas as any).backgroundImage = null;
+    canvas.backgroundImage = undefined;
     
     // Force render
     canvas.renderAll();
@@ -599,43 +579,6 @@ export const useEditor = () => {
     setEditorState(initialState);
     saveToHistory();
   }, [saveToHistory]);
-
-  const setBackgroundEditable = useCallback((editable: boolean) => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    
-    // Since we're using direct backgroundImage assignment, handle conversion differently
-    if (editable && (canvas as any).backgroundImage) {
-      // Convert background image to a regular object for editing
-      const bgImg = (canvas as any).backgroundImage;
-      if (bgImg) {
-        // Clone the background image as a regular fabric object
-        const imgClone = new fabric.Image(bgImg.getElement(), {
-          left: 0,
-          top: 0,
-          selectable: true,
-          evented: true,
-          hasControls: true,
-          hasBorders: true,
-        });
-        
-        // Clear background and add as regular object
-        (canvas as any).backgroundImage = null;
-        canvas.add(imgClone);
-        canvas.setActiveObject(imgClone);
-        canvas.renderAll();
-      }
-    } else if (!editable) {
-      // If making non-editable, find the image object and convert back to background
-      const imageObj = canvas.getObjects().find(o => o.type === 'image');
-      if (imageObj) {
-        canvas.remove(imageObj);
-        (canvas as any).backgroundImage = imageObj;
-        canvas.discardActiveObject();
-        canvas.renderAll();
-      }
-    }
-  }, []);
 
   return {
     canvasRef,
@@ -656,6 +599,5 @@ export const useEditor = () => {
     toggleLayerLock,
     deleteLayer,
     duplicateLayer,
-    setBackgroundEditable,
   };
 };
