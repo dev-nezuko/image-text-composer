@@ -115,8 +115,10 @@ export default function HomePage() {
 								break;
 						}
 						
-						canvas.renderAll();
-						canvas.fire("object:modified", { target: activeObject });
+						// Fabric hit-tests against cached corner coordinates; refresh them.
+						activeObject.setCoords();
+						canvas.requestRenderAll();
+						canvas.fire('object:modified', { target: activeObject });
 					}
 				}
 			}

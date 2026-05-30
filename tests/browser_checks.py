@@ -99,6 +99,17 @@ def desktop_checks(browser, base_url, folder: Path, image: Path, errors):
     layer('Second caption').click()
     expect(content).to_have_value('Second caption')
 
+    # A keyboard nudge moves the layer's hit area too, not just its pixels.
+    layer('Second caption').click()
+    page.get_by_role('heading', name='Image Text Editor').click()
+    for _ in range(10):
+        page.keyboard.press('Shift+ArrowUp')
+    box = page.locator('canvas.upper-canvas').bounding_box()
+    page.mouse.click(box['x'] + 4, box['y'] + 4)
+    page.get_by_text('No selection', exact=True).wait_for()
+    page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2 - 100)
+    expect(content).to_have_value('Second caption')
+
     # A non-PNG is refused with an inline message rather than a blocking alert.
     text_file = folder / 'notes.txt'
     text_file.write_text('not an image')
