@@ -42,8 +42,10 @@ export const addTextToCanvas = (
   const textObject = new fabric.IText(text, {
     ...style,
     textAlign: textAlign === 'right' || textAlign === 'center' ? textAlign : 'left',
+    // Selection handles in the app's safelight accent.
     cornerStyle: 'circle',
-    cornerColor: '#3b82f6',
+    cornerColor: '#e3583a',
+    borderColor: '#e3583a',
     cornerStrokeColor: '#ffffff',
     cornerSize: 8,
     transparentCorners: false,

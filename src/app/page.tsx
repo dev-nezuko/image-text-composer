@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useEditor } from '../hooks/use-editor';
+import { useEditor } from '@/hooks/use-editor';
 import { Toolbar } from '@/components/editor/toolbar';
 import { CanvasContainer } from '@/components/editor/canvas-container';
 import { PropertiesPanel } from '@/components/editor/properties-panel';
@@ -14,7 +14,10 @@ export default function HomePage() {
 		canvasRef,
 		editorState,
 		isLoading,
+		error,
+		dismissError,
 		initCanvas,
+		fitToViewport,
 		loadImage,
 		addTextLayer,
 		updateTextProperties,
@@ -149,37 +152,22 @@ export default function HomePage() {
 		}
 	}, [updateTextProperties]);
 
-	return (
-		<div className="h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-			{/* Top Navigation Bar */}
-			<div className="bg-black/20 backdrop-blur-xl border-b border-gray-600/20 px-8 py-6">
-				<div className="flex items-center justify-between">
-					<div className="flex items-center space-x-4">
-						<div className="w-10 h-10 bg-gradient-to-r from-gray-400 to-gray-300 rounded-xl flex items-center justify-center">
-							<span className="text-gray-900 font-bold text-lg">A</span>
-						</div>
-						<div>
-							<h1 className="text-2xl font-bold bg-gradient-to-r from-gray-300 to-gray-100 bg-clip-text text-transparent">
-								Adomate Studio
-							</h1>
-							<p className="text-gray-400/70 text-sm font-medium">
-								Creative Design Platform
-							</p>
-						</div>
-					</div>
-					<div className="flex items-center space-x-6">
-						<div className="bg-gray-600/10 border border-gray-600/20 rounded-lg px-4 py-2">
-							<span className="text-gray-300 text-sm font-medium">
-								History: {editorState.historyIndex + 1} / {editorState.history.length}
-							</span>
-						</div>
-						<div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
-					</div>
-				</div>
-			</div>
+	const hasImage = editorState.backgroundImage !== null;
+	const panelHeading = 'border-b px-4 py-3 text-sm font-semibold';
 
-			{/* Toolbar */}
-			<div className="bg-black/10 backdrop-blur-sm border-b border-gray-600/10">
+	return (
+		<div className="flex min-h-screen flex-col lg:h-screen">
+			<header className="flex items-center justify-between gap-4 border-b px-4 py-3 sm:px-6">
+				<div className="flex items-baseline gap-3">
+					<h1 className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Image Text Editor</h1>
+					<p className="hidden text-sm text-muted-foreground sm:block">Text over PNGs, exported at full size</p>
+				</div>
+				<p className="font-mono text-xs text-muted-foreground" aria-live="polite">
+					Step {editorState.historyIndex + 1} of {editorState.history.length}
+				</p>
+			</header>
+
+			<div className="border-b bg-card/60">
 				<Toolbar
 					onImageUpload={loadImage}
 					onAddText={addTextLayer}
@@ -194,68 +182,46 @@ export default function HomePage() {
 				/>
 			</div>
 
-			{/* Main Content Area */}
-			<div className="flex-1 flex overflow-hidden">
-				{/* Left Sidebar - Layer Panel */}
-				<div className="w-80 bg-black/20 backdrop-blur-sm border-r border-gray-600/20 flex flex-col">
-					<div className="p-6 border-b border-gray-600/10">
-						<h2 className="text-lg font-semibold text-gray-200 mb-2">Layers</h2>
-						<p className="text-gray-400/60 text-sm">Manage your design elements</p>
-					</div>
-					<div className="flex-1 overflow-y-auto">
-						<LayerPanel
-							layers={editorState.textLayers}
-							selectedLayerId={editorState.selectedLayerId}
-							onLayerSelect={selectLayer}
-							onLayerReorder={reorderLayer}
-							onLayerToggleVisibility={toggleLayerVisibility}
-							onLayerToggleLock={toggleLayerLock}
-							onLayerDelete={deleteLayer}
-							onLayerDuplicate={duplicateLayer}
-						/>
-					</div>
+			{error && (
+				<div role="alert" className="flex items-center justify-between gap-4 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm sm:px-6">
+					<span>{error}</span>
+					<button type="button" onClick={dismissError} className="rounded-sm px-2 py-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+						Dismiss
+					</button>
 				</div>
+			)}
 
-				{/* Center Canvas Area */}
-				<div className="flex-1 relative overflow-hidden">
-					<div className="absolute inset-0 bg-gradient-to-br from-gray-800/50 to-gray-700/30"></div>
-					<div className="relative h-full flex items-center justify-center p-8">
-						<div className="bg-white/5 backdrop-blur-sm border border-gray-600/20 rounded-2xl p-6 shadow-2xl">
-							<CanvasContainer
-								onCanvasReady={initCanvas}
-								width={editorState.canvasWidth}
-								height={editorState.canvasHeight}
-							/>
-						</div>
-					</div>
-				</div>
+			<main className="flex flex-1 flex-col lg:grid lg:min-h-0 lg:grid-cols-[20rem_minmax(0,1fr)_19rem]">
+				<section aria-labelledby="canvas-heading" className="order-1 h-[50svh] p-4 lg:order-2 lg:h-auto lg:min-h-0 lg:p-6">
+					<h2 id="canvas-heading" className="sr-only">Canvas</h2>
+					<CanvasContainer onCanvasReady={initCanvas} onViewportResize={fitToViewport} hasImage={hasImage} />
+				</section>
 
-				{/* Right Sidebar - Properties Panel */}
-				<div className="w-96 bg-black/20 backdrop-blur-sm border-l border-gray-600/20 flex flex-col">
-					<div className="p-6 border-b border-gray-600/10">
-						<h2 className="text-lg font-semibold text-gray-200 mb-2">Properties</h2>
-						<p className="text-gray-400/60 text-sm">Customize your selections</p>
-					</div>
-					<div className="flex-1 overflow-y-auto">
-						<PropertiesPanel
-							selectedObjectData={selectedObjectData}
-							onUpdateText={handleUpdateText}
-						/>
-					</div>
-				</div>
-			</div>
+				<section aria-labelledby="layers-heading" className="order-2 border-t lg:order-1 lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-t-0">
+					<h2 id="layers-heading" className={panelHeading}>Layers</h2>
+					<LayerPanel
+						layers={editorState.textLayers}
+						selectedLayerId={editorState.selectedLayerId}
+						onLayerSelect={selectLayer}
+						onLayerReorder={reorderLayer}
+						onLayerToggleVisibility={toggleLayerVisibility}
+						onLayerToggleLock={toggleLayerLock}
+						onLayerDelete={deleteLayer}
+						onLayerDuplicate={duplicateLayer}
+					/>
+				</section>
 
-			{/* Loading Overlay */}
+				<section aria-labelledby="properties-heading" className="order-3 border-t lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0">
+					<h2 id="properties-heading" className={panelHeading}>Properties</h2>
+					<PropertiesPanel selectedObjectData={selectedObjectData} onUpdateText={handleUpdateText} />
+				</section>
+			</main>
+
 			{isLoading && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-					<div className="bg-gradient-to-br from-gray-800 to-gray-700 border border-gray-600/20 p-8 rounded-2xl shadow-2xl">
-						<div className="flex items-center space-x-4">
-							<div className="w-8 h-8 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-							<div>
-								<p className="text-gray-200 font-medium">Processing Image</p>
-								<p className="text-gray-400/60 text-sm">Please wait...</p>
-							</div>
-						</div>
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70" role="status" aria-live="polite">
+					<div className="flex items-center gap-3 rounded-md border bg-card px-5 py-4 shadow-lg">
+						<div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" aria-hidden />
+						<p className="text-sm">Processing image…</p>
 					</div>
 				</div>
 			)}

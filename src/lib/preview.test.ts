@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitPreview } from '@/lib/preview';
+import { displayScale, fitPreview } from '@/lib/preview';
 
 const MAX = { width: 800, height: 600 };
 
@@ -22,5 +22,23 @@ describe('fitPreview', () => {
     const fit = fitPreview(image, MAX);
     expect(fit.width / fit.scale).toBeCloseTo(image.width);
     expect(fit.height / fit.scale).toBeCloseTo(image.height);
+  });
+});
+
+describe('displayScale', () => {
+  it('shrinks the canvas to the narrower side of a phone layout', () => {
+    expect(displayScale({ width: 800, height: 400 }, { width: 358, height: 600 })).toBeCloseTo(358 / 800);
+  });
+
+  it('never enlarges a canvas that already fits', () => {
+    expect(displayScale({ width: 800, height: 600 }, { width: 1200, height: 900 })).toBe(1);
+  });
+
+  it('is limited by height in a short, wide box', () => {
+    expect(displayScale({ width: 800, height: 600 }, { width: 1000, height: 300 })).toBe(0.5);
+  });
+
+  it('ignores a box that has not been laid out yet', () => {
+    expect(displayScale({ width: 800, height: 600 }, { width: 0, height: 0 })).toBe(1);
   });
 });

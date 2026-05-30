@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
+import { useState, useEffect, useCallback, memo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,7 +9,7 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { HexColorPicker } from 'react-colorful';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { loadGoogleFonts } from '@/lib/google-font';
+import { loadGoogleFonts, numericFontWeight } from '@/lib/google-font';
 import type { GoogleFont, SelectedText, TextStyleUpdate } from '@/lib/types';
 import { Palette, AlignLeft, AlignCenter, AlignRight, RotateCcw, RotateCw, Type } from 'lucide-react';
 
@@ -18,11 +18,9 @@ interface PropertiesPanelProps {
 	onUpdateText: (updates: TextStyleUpdate) => void;
 }
 
+type Update = (updates: TextStyleUpdate) => void;
+
 const FONT_WEIGHTS = [
-	{ value: 'normal', label: 'Normal' },
-	{ value: 'bold', label: 'Bold' },
-	{ value: '100', label: 'Thin' },
-	{ value: '200', label: 'Extra Light' },
 	{ value: '300', label: 'Light' },
 	{ value: '400', label: 'Regular' },
 	{ value: '500', label: 'Medium' },
@@ -32,24 +30,27 @@ const FONT_WEIGHTS = [
 	{ value: '900', label: 'Black' },
 ];
 
+const ALIGNMENTS = [
+	{ value: 'left', label: 'Align left', Icon: AlignLeft },
+	{ value: 'center', label: 'Align center', Icon: AlignCenter },
+	{ value: 'right', label: 'Align right', Icon: AlignRight },
+] as const;
+
+const labelClass = 'text-xs font-medium uppercase tracking-wider text-muted-foreground';
+
 const useFonts = () => {
 	const [fonts, setFonts] = useState<GoogleFont[]>([]);
 	const [fontsLoading, setFontsLoading] = useState(true);
 
 	useEffect(() => {
 		let mounted = true;
-		
-		loadGoogleFonts().then((loadedFonts: GoogleFont[]) => {
-			if (mounted) {
-				setFonts(loadedFonts);
-				setFontsLoading(false);
-			}
-		}).catch(() => {
-			if (mounted) {
-				setFontsLoading(false);
-			}
-		});
-
+		loadGoogleFonts()
+			.then((loaded) => {
+				if (mounted) setFonts(loaded);
+			})
+			.finally(() => {
+				if (mounted) setFontsLoading(false);
+			});
 		return () => {
 			mounted = false;
 		};
@@ -58,72 +59,60 @@ const useFonts = () => {
 	return { fonts, fontsLoading };
 };
 
-const useDebouncedUpdate = (callback: (updates: TextStyleUpdate) => void, delay: number = 100) => {
+const useDebouncedUpdate = (callback: Update, delay: number) => {
 	const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
 	// A pending edit must not land on whichever layer is selected next.
 	useEffect(() => () => clearTimeout(timeoutRef.current), []);
 
 	return useCallback((updates: TextStyleUpdate) => {
-		if (timeoutRef.current) {
-			clearTimeout(timeoutRef.current);
-		}
-		
-		timeoutRef.current = setTimeout(() => {
-			callback(updates);
-		}, delay);
+		clearTimeout(timeoutRef.current);
+		timeoutRef.current = setTimeout(() => callback(updates), delay);
 	}, [callback, delay]);
 };
 
-const TextContentSection = memo(({ 
-	text, 
-	onUpdate 
-}: { 
-	text: string; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const TextContentSection = memo(function TextContentSection({ text, onUpdate }: { text: string; onUpdate: Update }) {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 300);
 
 	return (
 		<div className="space-y-2">
-			<Label htmlFor="text-content" className="text-gray-200 text-sm font-medium">Content</Label>
+			<Label htmlFor="text-content" className={labelClass}>Content</Label>
 			<Textarea
 				id="text-content"
 				defaultValue={text}
 				onChange={(e) => debouncedUpdate({ text: e.target.value })}
-				className="resize-none bg-gray-800/50 border-gray-700/50 text-gray-200 placeholder-gray-400/40 focus:border-gray-500/50 focus:ring-gray-500/20"
+				className="resize-none"
 				rows={3}
-				placeholder="Enter your text here..."
+				placeholder="Caption text"
 			/>
 		</div>
 	);
 });
-TextContentSection.displayName = 'TextContentSection';
 
-const FontFamilySection = memo(({ 
-	fontFamily, 
-	fonts, 
-	fontsLoading, 
-	onUpdate 
-}: { 
-	fontFamily: string; 
-	fonts: GoogleFont[]; 
-	fontsLoading: boolean; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const FontFamilySection = memo(function FontFamilySection({
+	fontFamily,
+	fonts,
+	fontsLoading,
+	onUpdate,
+}: {
+	fontFamily: string;
+	fonts: GoogleFont[];
+	fontsLoading: boolean;
+	onUpdate: Update;
+}) {
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Font Family</Label>
+			<Label htmlFor="font-family" className={labelClass}>Font Family</Label>
 			<Select value={fontFamily} onValueChange={(family) => onUpdate({ fontFamily: family })}>
-				<SelectTrigger className="bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20">
-					<SelectValue placeholder="Select font..." />
+				<SelectTrigger id="font-family">
+					<SelectValue placeholder="Choose a font" />
 				</SelectTrigger>
-				<SelectContent className="max-h-60 bg-gray-800 border-gray-700">
+				<SelectContent className="max-h-60">
 					{fontsLoading ? (
-						<SelectItem value="loading" disabled className="text-gray-400/60">Loading fonts...</SelectItem>
+						<SelectItem value="loading" disabled>Loading fonts…</SelectItem>
 					) : (
 						fonts.map((font) => (
-							<SelectItem key={font.family} value={font.family} className="text-gray-200 hover:bg-gray-700">
+							<SelectItem key={font.family} value={font.family}>
 								<span style={{ fontFamily: font.family }}>{font.family}</span>
 							</SelectItem>
 						))
@@ -133,15 +122,8 @@ const FontFamilySection = memo(({
 		</div>
 	);
 });
-FontFamilySection.displayName = 'FontFamilySection';
 
-const FontSizeSection = memo(({ 
-	fontSize, 
-	onUpdate 
-}: { 
-	fontSize: number; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const FontSizeSection = memo(function FontSizeSection({ fontSize, onUpdate }: { fontSize: number; onUpdate: Update }) {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 	const [size, setSize] = useState(fontSize);
 
@@ -157,21 +139,23 @@ const FontSizeSection = memo(({
 
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Font Size</Label>
+			<Label htmlFor="font-size" className={labelClass}>Font Size</Label>
 			<div className="flex items-center gap-3">
 				<Slider
 					value={[size]}
 					onValueChange={([value]) => changeSize(value)}
+					aria-label="Font size"
 					max={200}
 					min={8}
 					step={1}
 					className="flex-1"
 				/>
 				<Input
+					id="font-size"
 					type="number"
 					value={size}
 					onChange={(e) => changeSize(Number.parseInt(e.target.value, 10) || 8)}
-					className="w-16 bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20"
+					className="w-20 font-mono"
 					min={8}
 					max={200}
 				/>
@@ -179,25 +163,18 @@ const FontSizeSection = memo(({
 		</div>
 	);
 });
-FontSizeSection.displayName = 'FontSizeSection';
 
-const FontWeightSection = memo(({ 
-	fontWeight, 
-	onUpdate 
-}: { 
-	fontWeight: string | number; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const FontWeightSection = memo(function FontWeightSection({ fontWeight, onUpdate }: { fontWeight: string | number; onUpdate: Update }) {
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Font Weight</Label>
-			<Select value={String(fontWeight ?? '')} onValueChange={(value) => onUpdate({ fontWeight: value })}>
-				<SelectTrigger className="bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20">
+			<Label htmlFor="font-weight" className={labelClass}>Font Weight</Label>
+			<Select value={String(numericFontWeight(fontWeight))} onValueChange={(value) => onUpdate({ fontWeight: value })}>
+				<SelectTrigger id="font-weight">
 					<SelectValue />
 				</SelectTrigger>
-				<SelectContent className="bg-gray-800 border-gray-700">
+				<SelectContent>
 					{FONT_WEIGHTS.map((weight) => (
-						<SelectItem key={weight.value} value={weight.value} className="text-gray-200 hover:bg-gray-700">
+						<SelectItem key={weight.value} value={weight.value}>
 							{weight.label}
 						</SelectItem>
 					))}
@@ -206,15 +183,8 @@ const FontWeightSection = memo(({
 		</div>
 	);
 });
-FontWeightSection.displayName = 'FontWeightSection';
 
-const ColorSection = memo(({ 
-	fill, 
-	onUpdate 
-}: { 
-	fill: string; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const ColorSection = memo(function ColorSection({ fill, onUpdate }: { fill: string; onUpdate: Update }) {
 	const [color, setColor] = useState(fill);
 
 	useEffect(() => {
@@ -228,212 +198,112 @@ const ColorSection = memo(({
 
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Color</Label>
+			<Label htmlFor="text-color" className={labelClass}>Color</Label>
 			<Popover>
 				<PopoverTrigger asChild>
-					<Button 
-						variant="outline" 
-						className="w-full justify-start gap-3 bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50"
-					>
-						<div
-							className="w-4 h-4 rounded border border-gray-600"
-							style={{ backgroundColor: color }}
-						/>
-						<Palette className="w-4 h-4" />
+					<Button id="text-color" variant="outline" className="w-full justify-start gap-3 font-mono">
+						<span className="h-4 w-4 rounded-sm border border-input" style={{ backgroundColor: color }} aria-hidden />
+						<Palette className="h-4 w-4" aria-hidden />
 						{color.toUpperCase()}
 					</Button>
 				</PopoverTrigger>
-				<PopoverContent className="w-auto p-3 bg-gray-800 border-gray-700" align="start">
+				<PopoverContent className="w-auto p-3" align="start">
 					<HexColorPicker color={color} onChange={handleColorChange} />
 				</PopoverContent>
 			</Popover>
 		</div>
 	);
 });
-ColorSection.displayName = 'ColorSection';
 
-const OpacitySection = memo(({ 
-	opacity, 
-	onUpdate 
-}: { 
-	opacity: number; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const OpacitySection = memo(function OpacitySection({ opacity, onUpdate }: { opacity: number; onUpdate: Update }) {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Opacity</Label>
+			<p id="opacity-label" className={labelClass}>Opacity</p>
 			<div className="flex items-center gap-3">
 				<Slider
 					value={[opacity * 100]}
 					onValueChange={([value]) => debouncedUpdate({ opacity: value / 100 })}
+					aria-labelledby="opacity-label"
 					max={100}
 					min={0}
 					step={1}
 					className="flex-1"
 				/>
-				<span className="text-sm text-gray-400/60 w-12">
-					{Math.round(opacity * 100)}%
-				</span>
+				<span className="w-12 text-right font-mono text-sm text-muted-foreground">{Math.round(opacity * 100)}%</span>
 			</div>
 		</div>
 	);
 });
-OpacitySection.displayName = 'OpacitySection';
 
-const AlignmentSection = memo(({ 
-	textAlign, 
-	onUpdate 
-}: { 
-	textAlign: string; 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const AlignmentSection = memo(function AlignmentSection({ textAlign, onUpdate }: { textAlign: string; onUpdate: Update }) {
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Alignment</Label>
-			<div className="flex gap-2">
-				<Button
-					variant={textAlign === 'left' ? 'default' : 'outline'}
-					size="sm"
-					onClick={() => onUpdate({ textAlign: 'left' })}
-					className={textAlign === 'left' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
-						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
-					}
-				>
-					<AlignLeft className="w-4 h-4" />
-				</Button>
-				<Button
-					variant={textAlign === 'center' ? 'default' : 'outline'}
-					size="sm"
-					onClick={() => onUpdate({ textAlign: 'center' })}
-					className={textAlign === 'center' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
-						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
-					}
-				>
-					<AlignCenter className="w-4 h-4" />
-				</Button>
-				<Button
-					variant={textAlign === 'right' ? 'default' : 'outline'}
-					size="sm"
-					onClick={() => onUpdate({ textAlign: 'right' })}
-					className={textAlign === 'right' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
-						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
-					}
-				>
-					<AlignRight className="w-4 h-4" />
-				</Button>
+			<p id="alignment-label" className={labelClass}>Alignment</p>
+			<div className="flex gap-2" role="group" aria-labelledby="alignment-label">
+				{ALIGNMENTS.map(({ value, label, Icon }) => (
+					<Button
+						key={value}
+						variant={textAlign === value ? 'default' : 'outline'}
+						size="icon"
+						aria-label={label}
+						aria-pressed={textAlign === value}
+						onClick={() => onUpdate({ textAlign: value })}
+					>
+						<Icon className="h-4 w-4" aria-hidden />
+					</Button>
+				))}
 			</div>
 		</div>
 	);
 });
-AlignmentSection.displayName = 'AlignmentSection';
 
-const RotationSection = memo(({ 
-	onUpdate 
-}: { 
-	onUpdate: (updates: TextStyleUpdate) => void; 
-}) => {
+const RotationSection = memo(function RotationSection({ onUpdate }: { onUpdate: Update }) {
 	return (
 		<div className="space-y-2">
-			<Label className="text-gray-200 text-sm font-medium">Rotation</Label>
-			<div className="flex gap-2">
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={() => onUpdate({ rotation: 'left' })}
-					title="Rotate left 15°"
-					className="bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50"
-				>
-					<RotateCcw className="w-4 h-4" />
+			<p id="rotation-label" className={labelClass}>Rotation</p>
+			<div className="flex gap-2" role="group" aria-labelledby="rotation-label">
+				<Button variant="outline" size="icon" aria-label="Rotate left 15 degrees" title="Rotate left 15°" onClick={() => onUpdate({ rotation: 'left' })}>
+					<RotateCcw className="h-4 w-4" aria-hidden />
 				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={() => onUpdate({ rotation: 'right' })}
-					title="Rotate right 15°"
-					className="bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50"
-				>
-					<RotateCw className="w-4 h-4" />
+				<Button variant="outline" size="icon" aria-label="Rotate right 15 degrees" title="Rotate right 15°" onClick={() => onUpdate({ rotation: 'right' })}>
+					<RotateCw className="h-4 w-4" aria-hidden />
 				</Button>
 			</div>
 		</div>
 	);
 });
-RotationSection.displayName = 'RotationSection';
 
-const EmptyState = memo(() => (
-	<div className="p-6">
-		<div className="text-center py-12">
-			<div className="w-16 h-16 bg-gray-600/10 rounded-full flex items-center justify-center mx-auto mb-4">
-				<Type className="w-8 h-8 text-gray-400" />
-			</div>
-			<p className="text-gray-400/60 text-sm font-medium">No selection</p>
-			<p className="text-gray-400/40 text-xs mt-1">Select a text layer to edit properties</p>
-		</div>
+const EmptyState = () => (
+	<div className="flex flex-col items-center px-6 py-10 text-center">
+		<Type className="mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
+		<p className="text-sm font-medium">No selection</p>
+		<p className="mt-1 text-xs text-muted-foreground">Select a text layer to edit its font, colour and alignment.</p>
 	</div>
-));
-EmptyState.displayName = 'EmptyState';
+);
 
-export const PropertiesPanel = memo(({ selectedObjectData, onUpdateText }: PropertiesPanelProps) => {
+export const PropertiesPanel = memo(function PropertiesPanel({ selectedObjectData, onUpdateText }: PropertiesPanelProps) {
 	const { fonts, fontsLoading } = useFonts();
 
-	const panelContent = useMemo(() => {
-		if (!selectedObjectData) {
-			return <EmptyState />;
-		}
+	if (!selectedObjectData) return <EmptyState />;
 
-		return (
-			// Keyed by layer so uncontrolled fields reset when the selection changes.
-			<div key={selectedObjectData.id} className="p-6 space-y-6">
-				<TextContentSection 
-					text={selectedObjectData.text} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<FontFamilySection 
-					fontFamily={selectedObjectData.fontFamily} 
-					fonts={fonts} 
-					fontsLoading={fontsLoading} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<FontSizeSection 
-					fontSize={selectedObjectData.fontSize} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<FontWeightSection 
-					fontWeight={selectedObjectData.fontWeight} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<ColorSection 
-					fill={selectedObjectData.fill} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<OpacitySection 
-					opacity={selectedObjectData.opacity} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<AlignmentSection 
-					textAlign={selectedObjectData.textAlign} 
-					onUpdate={onUpdateText} 
-				/>
-				
-				<RotationSection 
-					onUpdate={onUpdateText} 
-				/>
-			</div>
-		);
-	}, [selectedObjectData, fonts, fontsLoading, onUpdateText]);
-
-	return panelContent;
+	// Keyed by layer so uncontrolled fields reset when the selection changes.
+	return (
+		<div key={selectedObjectData.id} className="space-y-5 p-4">
+			<TextContentSection text={selectedObjectData.text} onUpdate={onUpdateText} />
+			<FontFamilySection
+				fontFamily={selectedObjectData.fontFamily}
+				fonts={fonts}
+				fontsLoading={fontsLoading}
+				onUpdate={onUpdateText}
+			/>
+			<FontSizeSection fontSize={selectedObjectData.fontSize} onUpdate={onUpdateText} />
+			<FontWeightSection fontWeight={selectedObjectData.fontWeight} onUpdate={onUpdateText} />
+			<ColorSection fill={selectedObjectData.fill} onUpdate={onUpdateText} />
+			<OpacitySection opacity={selectedObjectData.opacity} onUpdate={onUpdateText} />
+			<AlignmentSection textAlign={selectedObjectData.textAlign} onUpdate={onUpdateText} />
+			<RotationSection onUpdate={onUpdateText} />
+		</div>
+	);
 });
-
-PropertiesPanel.displayName = 'PropertiesPanel';

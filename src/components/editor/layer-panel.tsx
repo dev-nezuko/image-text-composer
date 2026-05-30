@@ -1,291 +1,159 @@
 'use client';
 
-import { useState, memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { 
-  ChevronUp, 
-  ChevronDown, 
-  Eye, 
-  EyeOff, 
-  Lock, 
-  Unlock,
-  Trash2,
-  Copy
-} from 'lucide-react';
-
-import type { TextLayer as Layer } from '@/lib/types';
+import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Layers, Lock, Trash2, Unlock } from 'lucide-react';
+import type { TextLayer } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 interface LayerPanelProps {
-  layers: Layer[];
-  selectedLayerId: string | null;
-  onLayerSelect: (layerId: string) => void;
-  onLayerReorder: (fromIndex: number, toIndex: number) => void;
-  onLayerToggleVisibility: (layerId: string) => void;
-  onLayerToggleLock: (layerId: string) => void;
-  onLayerDelete: (layerId: string) => void;
-  onLayerDuplicate: (layerId: string) => void;
+	/** Bottom-first, matching the canvas stacking order. Shown top-first. */
+	layers: TextLayer[];
+	selectedLayerId: string | null;
+	onLayerSelect: (layerId: string) => void;
+	onLayerReorder: (fromIndex: number, toIndex: number) => void;
+	onLayerToggleVisibility: (layerId: string) => void;
+	onLayerToggleLock: (layerId: string) => void;
+	onLayerDelete: (layerId: string) => void;
+	onLayerDuplicate: (layerId: string) => void;
 }
 
-// Memoized layer item component
-const LayerItem = memo(({
-  layer,
-  index,
-  totalLayers,
-  isSelected,
-  isDragged,
-  onSelect,
-  onReorder,
-  onToggleVisibility,
-  onToggleLock,
-  onDelete,
-  onDuplicate,
-  onDragStart,
-  onDragOver,
-  onDrop,
-}: {
-  layer: Layer;
-  index: number;
-  totalLayers: number;
-  isSelected: boolean;
-  isDragged: boolean;
-  onSelect: (id: string) => void;
-  onReorder: (fromIndex: number, toIndex: number) => void;
-  onToggleVisibility: (id: string) => void;
-  onToggleLock: (id: string) => void;
-  onDelete: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  onDragStart: (e: React.DragEvent, id: string) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent, id: string) => void;
-}) => {
-  const moveLayer = useCallback((direction: 'up' | 'down') => {
-    const toIndex = direction === 'up' ? index - 1 : index + 1;
-    if (toIndex >= 0 && toIndex < totalLayers) {
-      onReorder(index, toIndex);
-    }
-  }, [index, totalLayers, onReorder]);
+const iconButton = 'h-8 w-8 text-muted-foreground hover:text-foreground';
 
-  return (
-    <Card
-      className={`cursor-pointer transition-all duration-200 border ${
-        isSelected 
-          ? 'ring-2 ring-gray-400/50 bg-gray-400/10 border-gray-400/30' 
-          : 'bg-gray-800/30 border-gray-700/50 hover:bg-gray-700/30 hover:border-gray-600/50'
-      } ${isDragged ? 'opacity-50 scale-95' : ''}`}
-      draggable
-      onDragStart={(e) => onDragStart(e, layer.id)}
-      onDragOver={onDragOver}
-      onDrop={(e) => onDrop(e, layer.id)}
-      onClick={() => onSelect(layer.id)}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col space-y-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    moveLayer('up');
-                  }}
-                  disabled={index === 0}
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    moveLayer('down');
-                  }}
-                  disabled={index === totalLayers - 1}
-                >
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate text-gray-200">
-                  {layer.text || 'Empty Text'}
-                </p>
-                <p className="text-xs text-gray-400/40">
-                  Layer {totalLayers - index}
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleVisibility(layer.id);
-              }}
-            >
-              {layer.visible ? (
-                <Eye className="h-4 w-4" />
-              ) : (
-                <EyeOff className="h-4 w-4" />
-              )}
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleLock(layer.id);
-              }}
-            >
-              {layer.locked ? (
-                <Lock className="h-4 w-4" />
-              ) : (
-                <Unlock className="h-4 w-4" />
-              )}
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDuplicate(layer.id);
-              }}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-red-400/60 hover:text-red-400 hover:bg-red-500/20"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(layer.id);
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+const EmptyState = () => (
+	<div className="flex flex-col items-center px-6 py-10 text-center">
+		<Layers className="mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
+		<p className="text-sm font-medium">No layers yet</p>
+		<p className="mt-1 text-xs text-muted-foreground">Add Text puts a layer in the middle of the canvas.</p>
+	</div>
+);
+
+export const LayerPanel = memo(function LayerPanel({
+	layers,
+	selectedLayerId,
+	onLayerSelect,
+	onLayerReorder,
+	onLayerToggleVisibility,
+	onLayerToggleLock,
+	onLayerDelete,
+	onLayerDuplicate,
+}: LayerPanelProps) {
+	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+	const handleDrop = useCallback((targetIndex: number) => {
+		if (draggedIndex !== null && draggedIndex !== targetIndex) onLayerReorder(draggedIndex, targetIndex);
+		setDraggedIndex(null);
+	}, [draggedIndex, onLayerReorder]);
+
+	if (layers.length === 0) return <EmptyState />;
+
+	const topFirst = layers.map((layer, stackIndex) => ({ layer, stackIndex })).reverse();
+
+	return (
+		<div className="space-y-3 p-4">
+			<p className="text-xs uppercase tracking-wider text-muted-foreground">
+				{layers.length} layer{layers.length !== 1 ? 's' : ''}
+			</p>
+			<ol className="space-y-2">
+				{topFirst.map(({ layer, stackIndex }) => {
+					const isSelected = selectedLayerId === layer.id;
+					const name = layer.text || 'Empty text';
+					return (
+						<li
+							key={layer.id}
+							draggable
+							onDragStart={(e) => {
+								setDraggedIndex(stackIndex);
+								e.dataTransfer.effectAllowed = 'move';
+							}}
+							onDragOver={(e) => {
+								e.preventDefault();
+								e.dataTransfer.dropEffect = 'move';
+							}}
+							onDrop={(e) => {
+								e.preventDefault();
+								handleDrop(stackIndex);
+							}}
+							className={cn(
+								'flex items-center gap-1 rounded-md border bg-card p-1.5 transition-colors',
+								isSelected ? 'border-primary/70 bg-primary/10' : 'hover:bg-accent/60',
+								draggedIndex === stackIndex && 'opacity-50',
+								!layer.visible && 'text-muted-foreground',
+							)}
+						>
+							<div className="flex flex-col">
+								<Button
+									variant="ghost"
+									size="icon"
+									className="h-5 w-6 text-muted-foreground hover:text-foreground"
+									aria-label={`Bring "${name}" forward`}
+									disabled={stackIndex === layers.length - 1}
+									onClick={() => onLayerReorder(stackIndex, stackIndex + 1)}
+								>
+									<ChevronUp className="h-3.5 w-3.5" aria-hidden />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									className="h-5 w-6 text-muted-foreground hover:text-foreground"
+									aria-label={`Send "${name}" backward`}
+									disabled={stackIndex === 0}
+									onClick={() => onLayerReorder(stackIndex, stackIndex - 1)}
+								>
+									<ChevronDown className="h-3.5 w-3.5" aria-hidden />
+								</Button>
+							</div>
+
+							<button
+								type="button"
+								aria-pressed={isSelected}
+								onClick={() => onLayerSelect(layer.id)}
+								className="min-w-0 flex-1 rounded-sm px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								<span className="block truncate text-sm font-medium">{name}</span>
+								<span className="block whitespace-nowrap font-mono text-[11px] text-muted-foreground">Layer {stackIndex + 1}</span>
+							</button>
+
+							<Button
+								variant="ghost"
+								size="icon"
+								className={iconButton}
+								aria-label={layer.visible ? `Hide "${name}"` : `Show "${name}"`}
+								onClick={() => onLayerToggleVisibility(layer.id)}
+							>
+								{layer.visible ? <Eye className="h-4 w-4" aria-hidden /> : <EyeOff className="h-4 w-4" aria-hidden />}
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								className={iconButton}
+								aria-label={layer.locked ? `Unlock "${name}"` : `Lock "${name}"`}
+								onClick={() => onLayerToggleLock(layer.id)}
+							>
+								{layer.locked ? <Lock className="h-4 w-4" aria-hidden /> : <Unlock className="h-4 w-4" aria-hidden />}
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								className={iconButton}
+								aria-label={`Duplicate "${name}"`}
+								onClick={() => onLayerDuplicate(layer.id)}
+							>
+								<Copy className="h-4 w-4" aria-hidden />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-8 w-8 text-muted-foreground hover:text-destructive"
+								aria-label={`Delete "${name}"`}
+								onClick={() => onLayerDelete(layer.id)}
+							>
+								<Trash2 className="h-4 w-4" aria-hidden />
+							</Button>
+						</li>
+					);
+				})}
+			</ol>
+		</div>
+	);
 });
-LayerItem.displayName = 'LayerItem';
-
-// Memoized empty state component
-const EmptyState = memo(() => (
-  <div className="p-6">
-    <div className="text-center py-12">
-      <div className="w-16 h-16 bg-gray-600/10 rounded-full flex items-center justify-center mx-auto mb-4">
-        <Copy className="w-8 h-8 text-gray-400" />
-      </div>
-      <p className="text-gray-400/60 text-sm font-medium">No layers yet</p>
-      <p className="text-gray-400/40 text-xs mt-1">Add some text to get started</p>
-    </div>
-  </div>
-));
-EmptyState.displayName = 'EmptyState';
-
-export const LayerPanel = memo(({
-  layers,
-  selectedLayerId,
-  onLayerSelect,
-  onLayerReorder,
-  onLayerToggleVisibility,
-  onLayerToggleLock,
-  onLayerDelete,
-  onLayerDuplicate,
-}: LayerPanelProps) => {
-  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
-
-  const handleDragStart = useCallback((e: React.DragEvent, layerId: string) => {
-    setDraggedLayerId(layerId);
-    e.dataTransfer.effectAllowed = 'move';
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent, targetLayerId: string) => {
-    e.preventDefault();
-    if (!draggedLayerId || draggedLayerId === targetLayerId) return;
-
-    const draggedIndex = layers.findIndex(layer => layer.id === draggedLayerId);
-    const targetIndex = layers.findIndex(layer => layer.id === targetLayerId);
-    
-    if (draggedIndex !== -1 && targetIndex !== -1) {
-      onLayerReorder(draggedIndex, targetIndex);
-    }
-    setDraggedLayerId(null);
-  }, [draggedLayerId, layers, onLayerReorder]);
-
-  // Memoize the layer list to prevent unnecessary re-renders
-  const layerList = useMemo(() => {
-    if (layers.length === 0) {
-      return <EmptyState />;
-    }
-
-    return (
-      <div className="p-6 space-y-3">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-gray-400/60 text-sm font-medium">
-            {layers.length} layer{layers.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        
-        <div className="space-y-2">
-          {layers.map((layer, index) => (
-            <LayerItem
-              key={layer.id}
-              layer={layer}
-              index={index}
-              totalLayers={layers.length}
-              isSelected={selectedLayerId === layer.id}
-              isDragged={draggedLayerId === layer.id}
-              onSelect={onLayerSelect}
-              onReorder={onLayerReorder}
-              onToggleVisibility={onLayerToggleVisibility}
-              onToggleLock={onLayerToggleLock}
-              onDelete={onLayerDelete}
-              onDuplicate={onLayerDuplicate}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }, [
-    layers,
-    selectedLayerId,
-    draggedLayerId,
-    onLayerSelect,
-    onLayerReorder,
-    onLayerToggleVisibility,
-    onLayerToggleLock,
-    onLayerDelete,
-    onLayerDuplicate,
-    handleDragStart,
-    handleDragOver,
-    handleDrop,
-  ]);
-
-  return layerList;
-});
-LayerPanel.displayName = 'LayerPanel';

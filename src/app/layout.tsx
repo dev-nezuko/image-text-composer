@@ -1,22 +1,24 @@
 import './globals.css';
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
 
-const inter = Inter({ subsets: ['latin'] });
+const plexSans = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-plex-sans' });
+const plexMono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-plex-mono' });
+const fraunces = Fraunces({ subsets: ['latin'], weight: ['600'], variable: '--font-fraunces' });
 
 export const metadata: Metadata = {
-  title: 'Image Text Editor - Professional Text Overlay Tool',
-  description: 'Create stunning designs by adding beautiful text overlays to your images with professional-grade editing tools.',
+  title: 'Image Text Editor',
+  description: 'Add styled text layers to a PNG in the browser and export it at its original resolution.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  themeColor: '#191715',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${plexSans.variable} ${plexMono.variable} ${fraunces.variable}`}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }

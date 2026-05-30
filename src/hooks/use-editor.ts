@@ -14,7 +14,7 @@ import {
 } from '@/lib/fabric-utils';
 import { ensureFontLoaded } from '@/lib/google-font';
 import { pushSnapshot } from '@/lib/history';
-import { fitPreview } from '@/lib/preview';
+import { displayScale, fitPreview, type Size } from '@/lib/preview';
 
 const MAX_HISTORY = 20;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -39,6 +39,8 @@ export const useEditor = () => {
   const canvasRef = useRef<fabric.Canvas | null>(null);
   const [editorState, setEditorState] = useState<EditorState>(initialState);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const viewport = useRef<Size>({ width: 0, height: 0 });
   const styleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoring = useRef(false);
@@ -49,6 +51,25 @@ export const useEditor = () => {
     void canvasRef.current?.dispose();
     canvasRef.current = null;
   }, []);
+
+  // The drawing buffer keeps the preview size; on narrow screens only the CSS
+  // size shrinks. Fabric maps pointer positions through that CSS scale.
+  const applyDisplaySize = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const k = displayScale(canvas, viewport.current);
+    canvas.setDimensions({ width: canvas.width * k, height: canvas.height * k }, { cssOnly: true });
+  }, []);
+
+  const resizeCanvas = useCallback((size: Size) => {
+    canvasRef.current?.setDimensions(size);
+    applyDisplaySize();
+  }, [applyDisplaySize]);
+
+  const fitToViewport = useCallback((box: Size) => {
+    viewport.current = box;
+    applyDisplaySize();
+  }, [applyDisplaySize]);
 
   const saveToHistory = useCallback(() => {
     const canvas = canvasRef.current;
@@ -66,6 +87,7 @@ export const useEditor = () => {
     canvasRef.current?.dispose();
     const canvas = createCanvas(canvasElement);
     canvasRef.current = canvas;
+    applyDisplaySize();
 
     // Clicking from one layer straight onto another fires selection:updated,
     // not selection:created, so both must move the panel selection.
@@ -95,15 +117,16 @@ export const useEditor = () => {
     });
 
     saveToHistory();
-  }, [saveToHistory]);
+  }, [applyDisplaySize, saveToHistory]);
 
   const loadImage = useCallback((file: File) => {
     if (!canvasRef.current) return;
 
     if (file.type !== 'image/png' || file.size > MAX_UPLOAD_BYTES) {
-      alert('Choose a PNG no larger than 20 MB.');
+      setError(`${file.name} is not a PNG of 20 MB or less.`);
       return;
     }
+    setError(null);
     setIsLoading(true);
     const reader = new FileReader();
 
@@ -115,7 +138,7 @@ export const useEditor = () => {
           const canvas = canvasRef.current;
           if (!canvas) throw new Error('Canvas not available');
           if (!img.width || !img.height || img.width * img.height > MAX_UPLOAD_PIXELS) {
-            throw new Error('Invalid image dimensions');
+            throw new Error('the image is larger than 16 megapixels');
           }
 
           canvas.discardActiveObject();
@@ -123,7 +146,7 @@ export const useEditor = () => {
 
           // Fit the preview inside PREVIEW_MAX; export scales back up to the source size.
           const { width: canvasWidth, height: canvasHeight, scale } = fitPreview(img, PREVIEW_MAX);
-          canvas.setDimensions({ width: canvasWidth, height: canvasHeight });
+          resizeCanvas({ width: canvasWidth, height: canvasHeight });
 
           // Fabric 7 positions objects by their centre by default. Anchor the
           // background at its top-left corner, otherwise it is drawn centred on
@@ -145,20 +168,19 @@ export const useEditor = () => {
           saveToHistory();
           setIsLoading(false);
         })
-        .catch((err) => {
-          console.error('Fabric image creation failed:', err);
-          alert(`Failed to load image: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`);
+        .catch((err: unknown) => {
+          setError(`Could not open ${file.name}: ${err instanceof Error ? err.message : 'the file could not be decoded'}.`);
           setIsLoading(false);
         });
     };
 
     reader.onerror = () => {
       setIsLoading(false);
-      alert('Failed to read image file. Please check the file and try again.');
+      setError(`Could not read ${file.name}.`);
     };
 
     reader.readAsDataURL(file);
-  }, [saveToHistory]);
+  }, [resizeCanvas, saveToHistory]);
 
   const addTextLayer = useCallback(() => {
     const canvas = canvasRef.current;
@@ -234,7 +256,7 @@ export const useEditor = () => {
     setIsLoading(true);
     try {
       await canvas.loadFromJSON(snapshot.canvasJSON);
-      canvas.setDimensions({ width: snapshot.canvasWidth, height: snapshot.canvasHeight });
+      resizeCanvas({ width: snapshot.canvasWidth, height: snapshot.canvasHeight });
       canvas.discardActiveObject();
       canvas.requestRenderAll();
       setEditorState(prev => ({ ...snapshot, selectedLayerId: null, history: prev.history, historyIndex: index }));
@@ -242,7 +264,7 @@ export const useEditor = () => {
       restoring.current = false;
       setIsLoading(false);
     }
-  }, [editorState.history]);
+  }, [editorState.history, resizeCanvas]);
 
   const undo = useCallback(() => {
     if (editorState.historyIndex > 0) void restoreHistory(editorState.historyIndex - 1);
@@ -327,18 +349,24 @@ export const useEditor = () => {
     if (!canvas) return;
     canvas.discardActiveObject();
     canvas.clear();
-    canvas.setDimensions(BLANK_CANVAS);
+    resizeCanvas(BLANK_CANVAS);
     canvas.backgroundColor = BLANK_CANVAS.color;
     canvas.requestRenderAll();
     setEditorState(initialState());
+    setError(null);
     saveToHistory();
-  }, [saveToHistory]);
+  }, [resizeCanvas, saveToHistory]);
+
+  const dismissError = useCallback(() => setError(null), []);
 
   return {
     canvasRef,
     editorState,
     isLoading,
+    error,
+    dismissError,
     initCanvas,
+    fitToViewport,
     loadImage,
     addTextLayer,
     updateTextProperties,
