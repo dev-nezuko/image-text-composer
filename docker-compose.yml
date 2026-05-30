@@ -1,0 +1,8 @@
+# Entirely client-side: the canvas, the fonts and the export all run in the
+# browser. No API keys, no backend, no database — the build is a static site.
+services:
+  web:
+    build: { context: ., dockerfile: Dockerfile }
+    image: image-text-editor:local
+    container_name: image_text_editor
+    ports: ["3900:80"]
