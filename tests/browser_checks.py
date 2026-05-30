@@ -1,5 +1,11 @@
-"""Exercise the built editor (out/) in a real browser; no hosted services required."""
+"""Exercise the built editor (out/) in a real browser; no hosted services required.
+
+    python tests/browser_checks.py            # run the checks (works offline)
+    python tests/browser_checks.py --capture  # also refresh docs/screenshots/ (needs Google Fonts)
+"""
+import argparse
 import functools
+import math
 import http.server
 import re
 import struct
@@ -25,6 +31,28 @@ def gradient_png(width, height):
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
+
+
+def poster_png(width, height):
+    """A generated dusk scene (sky, sun, two hill lines) for README screenshots."""
+    def mix(a, b, t):
+        return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    sun_x, sun_y, sun_r = 0.7 * width, 0.5 * height, 0.08 * width
+    def pixel(x, y):
+        far = 0.66 * height + 0.05 * height * math.sin(x / width * 2 * math.pi * 1.3)
+        near = 0.8 * height + 0.04 * height * math.sin(x / width * 2 * math.pi * 2.1 + 1)
+        if y > near:
+            return (52, 38, 48)
+        if y > far:
+            return (96, 66, 76)
+        if (x - sun_x) ** 2 + (y - sun_y) ** 2 < sun_r ** 2:
+            return (255, 238, 206)
+        return mix((252, 222, 182), (232, 136, 104), y / far)
+    rows = b''.join(b'\0' + b''.join(bytes(pixel(x, y)) for x in range(width)) for y in range(height))
+    header = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b'')
 
 
 def open_editor(browser, base_url, errors, **context):
@@ -141,7 +169,50 @@ def mobile_checks(browser, base_url, folder: Path, image: Path, errors):
     page.close()
 
 
+def add_caption(page: Page, text: str, font: str, size: int, raise_by: int = 0):
+    page.get_by_role('button', name='Add Text', exact=True).click()
+    page.wait_for_timeout(300)
+    page.get_by_label('Content', exact=True).fill(text)
+    page.get_by_label('Font Family', exact=True).click()
+    page.get_by_role('option', name=font, exact=True).click()
+    page.get_by_label('Font Size', exact=True).fill(str(size))
+    page.wait_for_timeout(1200)  # debounced edits plus the Google Fonts stylesheet
+    page.get_by_role('heading', name='Image Text Editor').click()  # move focus off the form so arrows nudge
+    for _ in range(raise_by // 10):
+        page.keyboard.press('Shift+ArrowUp')
+    page.wait_for_timeout(400)
+
+
+def capture(browser, base_url, folder: Path, errors):
+    poster = folder / 'poster.png'
+    poster.write_bytes(poster_png(1600, 1000))
+    dest = REPO / 'docs' / 'screenshots'
+    dest.mkdir(parents=True, exist_ok=True)
+
+    page = open_editor(browser, base_url, errors, viewport={'width': 1440, 'height': 900})
+    page.locator('#image-upload').set_input_files(poster)
+    page.wait_for_timeout(600)
+    add_caption(page, 'LATE FERRY', 'Bebas Neue', 120, raise_by=150)
+    add_caption(page, 'Saturday, last sailing 21:40', 'Space Mono', 26, raise_by=60)
+    page.screenshot(path=str(dest / 'editor-desktop.png'))
+    page.close()
+
+    page = open_editor(browser, base_url, errors, viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    page.locator('#image-upload').set_input_files(poster)
+    page.wait_for_timeout(600)
+    add_caption(page, 'LATE FERRY', 'Bebas Neue', 120, raise_by=150)
+    page.evaluate('window.scrollTo(0, 0)')
+    page.screenshot(path=str(dest / 'editor-mobile.png'))
+    page.close()
+    for shot in ('editor-desktop.png', 'editor-mobile.png'):
+        print(f'captured docs/screenshots/{shot}: {(dest / shot).stat().st_size // 1024} KB')
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--capture', action='store_true', help='refresh docs/screenshots/')
+    args = parser.parse_args()
+
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(REPO / 'out'))
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -155,6 +226,8 @@ def main():
             browser = engine.chromium.launch(headless=True)
             desktop_checks(browser, base_url, folder, image, errors)
             mobile_checks(browser, base_url, folder, image, errors)
+            if args.capture:
+                capture(browser, base_url, folder, errors)
             browser.close()
         assert not errors, f'Console errors: {errors}'
         print('PASS: full-canvas background, source-resolution export, pixel-verified undo/redo, '
