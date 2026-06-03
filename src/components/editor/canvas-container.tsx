@@ -18,14 +18,19 @@ export const CanvasContainer = ({ onCanvasReady, width, height }: CanvasContaine
 	}, [onCanvasReady]);
 
 	return (
-		<div className="flex-1 flex items-center justify-center p-4 bg-gray-100">
+		<div className="relative">
 			<div
-				className="bg-white shadow-lg border border-gray-200 overflow-hidden"
-				style={{ width: `${width}px`, height: `${height}px`, maxWidth: '100%', maxHeight: '100%' }}
+				className="bg-white shadow-2xl border border-gray-600/20 overflow-hidden rounded-lg"
+				style={{ 
+					width: `${width}px`, 
+					height: `${height}px`, 
+					maxWidth: 'calc(100vw - 640px)', 
+					maxHeight: 'calc(100vh - 200px)'
+				}}
 			>
 				<canvas
 					ref={canvasElementRef}
-					className="block"
+					className="block w-full h-full"
 				/>
 			</div>
 		</div>

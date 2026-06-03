@@ -1,149 +1,295 @@
 'use client';
 
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Upload,
-  Type,
-  Download,
-  Layers,
-  Undo2,
-  Palette,
-  MousePointer,
-  RotateCw
-} from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEditor } from '../hooks/use-editor';
+import { Toolbar } from '@/components/editor/toolbar';
+import { CanvasContainer } from '@/components/editor/canvas-container';
+import { PropertiesPanel } from '@/components/editor/properties-panel';
+import { LayerPanel } from '@/components/editor/layer-panel';
+import * as fabric from 'fabric';
 
 export default function HomePage() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
-            Image Text Editor
-          </h1>
-          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Create stunning designs by adding beautiful text overlays to your images.
-            Professional-grade editing tools with an intuitive interface.
-          </p>
-          <Link href="/editor">
-            <Button size="lg" className="text-lg px-8 py-3">
-              Start Creating
-            </Button>
-          </Link>
-        </div>
+	const {
+		canvasRef,
+		editorState,
+		isLoading,
+		initCanvas,
+		loadImage,
+		addTextLayer,
+		updateTextProperties,
+		deleteSelectedLayer,
+		undo,
+		redo,
+		exportToPNG,
+		reset,
+		selectLayer,
+		reorderLayer,
+		toggleLayerVisibility,
+		toggleLayerLock,
+		deleteLayer,
+		duplicateLayer,
+	} = useEditor();
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <Upload className="w-10 h-10 text-blue-600 mb-2" />
-              <CardTitle>Image Upload</CardTitle>
-              <CardDescription>
-                Upload PNG images and the canvas automatically matches the aspect ratio
-              </CardDescription>
-            </CardHeader>
-          </Card>
+	const [selectedObjectData, setSelectedObjectData] = useState<any>(null);
 
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <Type className="w-10 h-10 text-green-600 mb-2" />
-              <CardTitle>Rich Text Editing</CardTitle>
-              <CardDescription>
-                Add multiple text layers with Google Fonts, custom styling, and formatting
-              </CardDescription>
-            </CardHeader>
-          </Card>
+	const getSelectedObjectData = useCallback(() => {
+		if (canvasRef.current) {
+			const canvas = canvasRef.current;
+			const activeObject = canvas.getActiveObject();
 
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <MousePointer className="w-10 h-10 text-purple-600 mb-2" />
-              <CardTitle>Precise Controls</CardTitle>
-              <CardDescription>
-                Drag, resize, and rotate text layers with snap-to-center guides
-              </CardDescription>
-            </CardHeader>
-          </Card>
+			if (activeObject && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
+				const t = activeObject as any;
+				return {
+					text: t.text ?? '',
+					fontFamily: t.fontFamily,
+					fontSize: t.fontSize,
+					fontWeight: t.fontWeight,
+					fill: t.fill,
+					opacity: t.opacity,
+					textAlign: t.textAlign,
+				};
+			}
+		}
+		return null;
+	}, []);
 
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <Layers className="w-10 h-10 text-orange-600 mb-2" />
-              <CardTitle>Layer Management</CardTitle>
-              <CardDescription>
-                Organize and reorder layers to control what appears in front or behind
-              </CardDescription>
-            </CardHeader>
-          </Card>
+	useEffect(() => {
+		const timeoutId = setTimeout(() => {
+			const data = getSelectedObjectData();
+			setSelectedObjectData(data);
+		}, 50);
 
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <Undo2 className="w-10 h-10 text-red-600 mb-2" />
-              <CardTitle>Undo/Redo</CardTitle>
-              <CardDescription>
-                Full history with 20+ steps and visual history indicator
-              </CardDescription>
-            </CardHeader>
-          </Card>
+		return () => clearTimeout(timeoutId);
+	}, [editorState.selectedLayerId, getSelectedObjectData]);
 
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <Download className="w-10 h-10 text-indigo-600 mb-2" />
-              <CardTitle>Export & Save</CardTitle>
-              <CardDescription>
-                Export to PNG with original dimensions and autosave to localStorage
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
+	useEffect(() => {
+		localStorage.removeItem('image-editor-state');
+		const handleKeyDown = (e: KeyboardEvent) => {
+			const target = e.target as HTMLElement | null;
+			const isFormElement =
+				!!target &&
+				(['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
 
-        {/* Key Features */}
-        <Card className="max-w-4xl mx-auto">
-          <CardHeader>
-            <CardTitle className="text-2xl text-center">Professional Features</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Palette className="w-5 h-5" />
-                  Text Styling
-                </h3>
-                <ul className="space-y-2 text-sm text-gray-600">
-                  <li>• Access to all Google Fonts</li>
-                  <li>• Font size, weight, and color control</li>
-                  <li>• Opacity and alignment options</li>
-                  <li>• Multi-line text support</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <RotateCw className="w-5 h-5" />
-                  Transform Tools
-                </h3>
-                <ul className="space-y-2 text-sm text-gray-600">
-                  <li>• Drag and drop positioning</li>
-                  <li>• Resize with corner handles</li>
-                  <li>• Free rotation control</li>
-                  <li>• Keyboard nudging support</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+			const activeObj = canvasRef.current?.getActiveObject() as any;
+			const isITextEditing =
+				!!activeObj &&
+				(activeObj.type === 'i-text' || activeObj.type === 'text') &&
+				activeObj.isEditing;
 
-        {/* CTA */}
-        <div className="text-center mt-12">
-          <p className="text-gray-600 mb-4">
-            Ready to create your first design?
-          </p>
-          <Link href="/editor">
-            <Button variant="outline" size="lg">
-              Launch Editor
-            </Button>
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+			if (isFormElement || isITextEditing) {
+				return;
+			}
+			if (e.ctrlKey || e.metaKey) {
+				switch (e.key) {
+					case 'z':
+						e.preventDefault();
+						if (e.shiftKey) {
+							redo();
+						} else {
+							undo();
+						}
+						break;
+					case 'y':
+						e.preventDefault();
+						redo();
+						break;
+					case 't':
+						e.preventDefault();
+						addTextLayer();
+						break;
+				}
+			}
+
+			if (e.key === 'Delete' || e.key === 'Backspace') {
+				if (editorState.selectedLayerId) {
+					deleteSelectedLayer();
+				}
+			}
+
+			if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+				if (editorState.selectedLayerId && canvasRef.current) {
+					e.preventDefault();
+					const canvas = canvasRef.current;
+					const activeObject = canvas.getActiveObject();
+					
+					if (activeObject) {
+						const nudgeAmount = e.shiftKey ? 10 : 1;
+						
+						switch (e.key) {
+							case 'ArrowUp':
+								activeObject.top = (activeObject.top || 0) - nudgeAmount;
+								break;
+							case 'ArrowDown':
+								activeObject.top = (activeObject.top || 0) + nudgeAmount;
+								break;
+							case 'ArrowLeft':
+								activeObject.left = (activeObject.left || 0) - nudgeAmount;
+								break;
+							case 'ArrowRight':
+								activeObject.left = (activeObject.left || 0) + nudgeAmount;
+								break;
+						}
+						
+						canvas.renderAll();
+					}
+				}
+			}
+		};
+
+		window.addEventListener('keydown', handleKeyDown);
+		return () => window.removeEventListener('keydown', handleKeyDown);
+	}, [undo, redo, addTextLayer, deleteSelectedLayer, editorState.selectedLayerId]);
+
+	const handleExport = () => {
+		const dataURL = exportToPNG();
+		if (dataURL) {
+			const link = document.createElement('a');
+			link.download = 'design.png';
+			link.href = dataURL;
+			link.click();
+		}
+	};
+
+	const canUndo = editorState.historyIndex > 0;
+	const canRedo = editorState.historyIndex < editorState.history.length - 1;
+
+	const handleUpdateText = useCallback((updates: Partial<{
+		text: string;
+		fontFamily: string;
+		fontSize: number;
+		fontWeight: string;
+		fill: string;
+		opacity: number;
+		textAlign: string;
+		rotation: 'left' | 'right';
+	}>) => {
+		updateTextProperties(updates);              // updates Fabric object
+		
+		// Only update selectedObjectData with display properties (not rotation commands)
+		const displayUpdates = Object.keys(updates)
+			.filter(key => key !== 'rotation')
+			.reduce((acc, key) => {
+				acc[key] = updates[key as keyof typeof updates];
+				return acc;
+			}, {} as any);
+			
+		if (Object.keys(displayUpdates).length > 0) {
+			setSelectedObjectData((prev: typeof selectedObjectData) =>
+				prev ? { ...prev, ...displayUpdates } : prev    // instantly reflect in UI
+			);
+		}
+	}, [updateTextProperties]);
+
+	return (
+		<div className="h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+			{/* Top Navigation Bar */}
+			<div className="bg-black/20 backdrop-blur-xl border-b border-gray-600/20 px-8 py-6">
+				<div className="flex items-center justify-between">
+					<div className="flex items-center space-x-4">
+						<div className="w-10 h-10 bg-gradient-to-r from-gray-400 to-gray-300 rounded-xl flex items-center justify-center">
+							<span className="text-gray-900 font-bold text-lg">A</span>
+						</div>
+						<div>
+							<h1 className="text-2xl font-bold bg-gradient-to-r from-gray-300 to-gray-100 bg-clip-text text-transparent">
+								Adomate Studio
+							</h1>
+							<p className="text-gray-400/70 text-sm font-medium">
+								Creative Design Platform
+							</p>
+						</div>
+					</div>
+					<div className="flex items-center space-x-6">
+						<div className="bg-gray-600/10 border border-gray-600/20 rounded-lg px-4 py-2">
+							<span className="text-gray-300 text-sm font-medium">
+								History: {editorState.historyIndex + 1} / {editorState.history.length}
+							</span>
+						</div>
+						<div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+					</div>
+				</div>
+			</div>
+
+			{/* Toolbar */}
+			<div className="bg-black/10 backdrop-blur-sm border-b border-gray-600/10">
+				<Toolbar
+					onImageUpload={loadImage}
+					onAddText={addTextLayer}
+					onUndo={undo}
+					onRedo={redo}
+					onExport={handleExport}
+					onReset={reset}
+					onDeleteSelected={deleteSelectedLayer}
+					canUndo={canUndo}
+					canRedo={canRedo}
+					hasSelection={!!editorState.selectedLayerId}
+				/>
+			</div>
+
+			{/* Main Content Area */}
+			<div className="flex-1 flex overflow-hidden">
+				{/* Left Sidebar - Layer Panel */}
+				<div className="w-80 bg-black/20 backdrop-blur-sm border-r border-gray-600/20 flex flex-col">
+					<div className="p-6 border-b border-gray-600/10">
+						<h2 className="text-lg font-semibold text-gray-200 mb-2">Layers</h2>
+						<p className="text-gray-400/60 text-sm">Manage your design elements</p>
+					</div>
+					<div className="flex-1 overflow-y-auto">
+						<LayerPanel
+							layers={editorState.textLayers}
+							selectedLayerId={editorState.selectedLayerId}
+							onLayerSelect={selectLayer}
+							onLayerReorder={reorderLayer}
+							onLayerToggleVisibility={toggleLayerVisibility}
+							onLayerToggleLock={toggleLayerLock}
+							onLayerDelete={deleteLayer}
+							onLayerDuplicate={duplicateLayer}
+						/>
+					</div>
+				</div>
+
+				{/* Center Canvas Area */}
+				<div className="flex-1 relative overflow-hidden">
+					<div className="absolute inset-0 bg-gradient-to-br from-gray-800/50 to-gray-700/30"></div>
+					<div className="relative h-full flex items-center justify-center p-8">
+						<div className="bg-white/5 backdrop-blur-sm border border-gray-600/20 rounded-2xl p-6 shadow-2xl">
+							<CanvasContainer
+								onCanvasReady={initCanvas}
+								width={editorState.canvasWidth}
+								height={editorState.canvasHeight}
+							/>
+						</div>
+					</div>
+				</div>
+
+				{/* Right Sidebar - Properties Panel */}
+				<div className="w-96 bg-black/20 backdrop-blur-sm border-l border-gray-600/20 flex flex-col">
+					<div className="p-6 border-b border-gray-600/10">
+						<h2 className="text-lg font-semibold text-gray-200 mb-2">Properties</h2>
+						<p className="text-gray-400/60 text-sm">Customize your selections</p>
+					</div>
+					<div className="flex-1 overflow-y-auto">
+						<PropertiesPanel
+							selectedObjectData={selectedObjectData}
+							onUpdateText={handleUpdateText}
+						/>
+					</div>
+				</div>
+			</div>
+
+			{/* Loading Overlay */}
+			{isLoading && (
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+					<div className="bg-gradient-to-br from-gray-800 to-gray-700 border border-gray-600/20 p-8 rounded-2xl shadow-2xl">
+						<div className="flex items-center space-x-4">
+							<div className="w-8 h-8 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+							<div>
+								<p className="text-gray-200 font-medium">Processing Image</p>
+								<p className="text-gray-400/60 text-sm">Please wait...</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
+		</div>
+	);
 }

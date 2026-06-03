@@ -46,32 +46,41 @@ export const useEditor = () => {
       setEditorState(prev => ({ ...prev, selectedLayerId: null }));
     });
 
+    // Debounced object modification handler
+    let modificationTimeout: NodeJS.Timeout;
     canvasRef.current.on('object:modified', () => {
-      // Update textLayers state to reflect canvas changes
-      if (canvasRef.current) {
-        const objects = canvasRef.current.getObjects();
-        const textLayers = objects
-          .filter(obj => obj.type === 'text' || obj.type === 'i-text')
-          .map(obj => {
-            // Ensure object has an ID
-            if (!(obj as any).id) {
-              (obj as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            }
-            return {
-              id: (obj as any).id || '',
-              text: (obj as any).text || '',
-              visible: obj.visible !== false,
-              locked: !obj.selectable || !obj.evented,
-            };
-          });
-        
-        setEditorState(prev => ({
-          ...prev,
-          textLayers,
-        }));
+      // Clear existing timeout to batch rapid modifications
+      if (modificationTimeout) {
+        clearTimeout(modificationTimeout);
       }
       
-      saveToHistory();
+      modificationTimeout = setTimeout(() => {
+        // Update textLayers state to reflect canvas changes
+        if (canvasRef.current) {
+          const objects = canvasRef.current.getObjects();
+          const textLayers = objects
+            .filter(obj => obj.type === 'text' || obj.type === 'i-text')
+            .map(obj => {
+              // Ensure object has an ID
+              if (!(obj as any).id) {
+                (obj as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              }
+              return {
+                id: (obj as any).id || '',
+                text: (obj as any).text || '',
+                visible: obj.visible !== false,
+                locked: !obj.selectable || !obj.evented,
+              };
+            });
+          
+          setEditorState(prev => ({
+            ...prev,
+            textLayers,
+          }));
+        }
+        
+        saveToHistory();
+      }, 100); // Batch modifications within 100ms
     });
 
     // Add snap-to-center functionality
@@ -182,8 +191,37 @@ export const useEditor = () => {
             }
           });
 
-          // Set canvas dimensions to match image
-          canvas.setDimensions({ width: img.width, height: img.height });
+          // Calculate viewable canvas dimensions while maintaining aspect ratio
+          const maxCanvasWidth = 800;
+          const maxCanvasHeight = 600;
+          const imageAspectRatio = img.width / img.height;
+          
+          let canvasWidth, canvasHeight;
+          
+          if (imageAspectRatio > maxCanvasWidth / maxCanvasHeight) {
+            // Image is wider than the max canvas aspect ratio
+            canvasWidth = maxCanvasWidth;
+            canvasHeight = maxCanvasWidth / imageAspectRatio;
+          } else {
+            // Image is taller than the max canvas aspect ratio
+            canvasHeight = maxCanvasHeight;
+            canvasWidth = maxCanvasHeight * imageAspectRatio;
+          }
+
+          // Set canvas dimensions to calculated viewable size
+          canvas.setDimensions({ width: canvasWidth, height: canvasHeight });
+
+          // Scale the image to fit the canvas while maintaining aspect ratio
+          const scaleX = canvasWidth / img.width;
+          const scaleY = canvasHeight / img.height;
+          const scale = Math.min(scaleX, scaleY);
+          
+          img.scaleX = scale;
+          img.scaleY = scale;
+          
+          // Center the image on the canvas
+          img.left = (canvasWidth - img.width * scale) / 2;
+          img.top = (canvasHeight - img.height * scale) / 2;
 
           // Set the image as background
           (canvas as any).backgroundImage = img;
@@ -193,8 +231,8 @@ export const useEditor = () => {
           setEditorState(prev => ({
             ...prev,
             backgroundImage: imgSrc,
-            canvasWidth: img.width,
-            canvasHeight: img.height,
+            canvasWidth: canvasWidth,
+            canvasHeight: canvasHeight,
             textLayers: [], // Clear text layers when new image is loaded
             selectedLayerId: null,
           }));
@@ -268,7 +306,7 @@ export const useEditor = () => {
     saveToHistory();
   }, [saveToHistory]);
 
-  // Update text properties
+  // Update text properties with performance optimizations
   const updateTextProperties = useCallback((updates: Partial<{
     text: string;
     fontFamily: string;
@@ -295,6 +333,10 @@ export const useEditor = () => {
 
     const apply = () => {
       try {
+        // Batch all property updates to minimize re-renders
+        const allUpdates: any = {};
+        let needsRender = false;
+
         // Handle rotation separately - only for text objects
         if (updates.rotation && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
           const currentAngle = activeObject.angle || 0;
@@ -303,22 +345,8 @@ export const useEditor = () => {
             ? currentAngle - rotationAmount 
             : currentAngle + rotationAmount;
           
-          // Use set method and ensure object maintains its properties
-          activeObject.set({
-            angle: newAngle
-          });
-          
-          // Ensure the object is still selectable and has proper ID
-          if (!activeObject.id) {
-            activeObject.id = editorState.selectedLayerId;
-          }
-          
-          // Force immediate visual update
-          activeObject.setCoords();
-          canvas.renderAll();
-          
-          // Trigger object:modified event to update state
-          canvas.fire('object:modified', { target: activeObject });
+          allUpdates.angle = newAngle;
+          needsRender = true;
         }
 
         // Handle other properties (excluding rotation)
@@ -328,39 +356,38 @@ export const useEditor = () => {
             const value = updates[key as keyof typeof updates];
             if (value !== undefined) {
               acc[key] = value;
+              needsRender = true;
             }
             return acc;
           }, {} as any);
 
-        if (Object.keys(otherUpdates).length > 0) {
-          activeObject.set(otherUpdates);
+        // Apply all updates at once
+        if (Object.keys(allUpdates).length > 0 || Object.keys(otherUpdates).length > 0) {
+          activeObject.set({
+            ...allUpdates,
+            ...otherUpdates,
+            selectable: true,
+            evented: true,
+            hasControls: true,
+            hasBorders: true
+          });
           
-          // Force immediate visual update for all property changes
-          activeObject.setCoords();
-          canvas.renderAll();
+          // Only render if we actually made changes
+          if (needsRender) {
+            // Batch coordinate updates
+            activeObject.initDimensions?.();
+            activeObject.setCoords();
+            canvas.renderAll();
+          }
         }
-        
-        // Ensure object maintains its text layer properties
-        activeObject.set({
-          selectable: true,
-          evented: true,
-          hasControls: true,
-          hasBorders: true,
-          type: activeObject.type // Preserve the original type
-        });
-        
-        // Final render and coordinate update
-        activeObject.initDimensions?.();
-        activeObject.setCoords();
-        canvas.renderAll();
 
-        // Trigger object:modified event to update state immediately
-        canvas.fire('object:modified', { target: activeObject });
-
+        // Debounced history save to prevent excessive saves
         if (styleSaveTimer.current) window.clearTimeout(styleSaveTimer.current);
         styleSaveTimer.current = window.setTimeout(() => {
+          // Trigger object:modified event to update state
+          canvas.fire('object:modified', { target: activeObject });
           saveToHistory();
-        }, 250) as unknown as number;
+        }, 300) as unknown as number;
       } catch (error) {
         console.error('Error updating text properties:', error);
       }
@@ -449,8 +476,25 @@ export const useEditor = () => {
     const objects = canvas.getObjects();
     const targetObject = objects[fromIndex];
     if (targetObject) {
+      // Remove the object from its current position
       canvas.remove(targetObject);
-      (canvas as any).insertAt(targetObject, toIndex);
+      
+      // Get the remaining objects
+      const remainingObjects = canvas.getObjects();
+      
+      // Clear the canvas
+      canvas.clear();
+      
+      // Re-add objects in the correct order
+      for (let i = 0; i < remainingObjects.length + 1; i++) {
+        if (i === toIndex) {
+          canvas.add(targetObject);
+        }
+        if (i < remainingObjects.length) {
+          canvas.add(remainingObjects[i]);
+        }
+      }
+      
       canvas.renderAll();
       saveToHistory();
     }
