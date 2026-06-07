@@ -24,7 +24,6 @@ export const useEditor = () => {
   const [isLoading, setIsLoading] = useState(false);
   const styleSaveTimer = useRef<number | null>(null);
 
-  // Initialize canvas
   const initCanvas = useCallback((canvasElement: HTMLCanvasElement) => {
     if (canvasRef.current) {
       canvasRef.current.dispose();
@@ -32,7 +31,6 @@ export const useEditor = () => {
 
     canvasRef.current = createCanvas(canvasElement);
     
-    // Set up event listeners
     canvasRef.current.on('selection:created', (e) => {
       if (e.selected && e.selected[0]) {
         const obj = e.selected[0] as any;
@@ -46,22 +44,18 @@ export const useEditor = () => {
       setEditorState(prev => ({ ...prev, selectedLayerId: null }));
     });
 
-    // Debounced object modification handler
     let modificationTimeout: NodeJS.Timeout;
     canvasRef.current.on('object:modified', () => {
-      // Clear existing timeout to batch rapid modifications
       if (modificationTimeout) {
         clearTimeout(modificationTimeout);
       }
       
       modificationTimeout = setTimeout(() => {
-        // Update textLayers state to reflect canvas changes
         if (canvasRef.current) {
           const objects = canvasRef.current.getObjects();
           const textLayers = objects
             .filter(obj => obj.type === 'text' || obj.type === 'i-text')
             .map(obj => {
-              // Ensure object has an ID
               if (!(obj as any).id) {
                 (obj as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
               }
@@ -80,10 +74,9 @@ export const useEditor = () => {
         }
         
         saveToHistory();
-      }, 100); // Batch modifications within 100ms
+      }, 100);
     });
 
-    // Add snap-to-center functionality
     canvasRef.current.on('object:moving', (e) => {
       const obj = e.target;
       if (obj && canvasRef.current) {
@@ -91,7 +84,6 @@ export const useEditor = () => {
         const centerX = canvas.width! / 2;
         const centerY = canvas.height! / 2;
         
-        // Snap to center when within 20px
         if (Math.abs(obj.left! - centerX) < 20) {
           obj.left = centerX;
         }
@@ -101,20 +93,17 @@ export const useEditor = () => {
       }
     });
 
-    // Load saved state
     loadFromStorage();
   }, []);
 
-  // Save current state to history
   const saveToHistory = useCallback(() => {
     setEditorState(prev => {
       const newHistory = prev.history.slice(0, prev.historyIndex + 1);
       
-      // Create a lightweight state copy without the full image data
-      const lightState = {
-        ...prev,
-        backgroundImage: prev.backgroundImage ? 'has-image' : null, // Just store a flag
-      };
+              const lightState = {
+          ...prev,
+          backgroundImage: prev.backgroundImage ? 'has-image' : null,
+        };
       
       newHistory.push(lightState);
       
@@ -128,8 +117,7 @@ export const useEditor = () => {
         historyIndex: newHistory.length - 1,
       };
 
-      // Save to localStorage with error handling (excluding image data)
-      try {
+              try {
         const stateToSave = {
           ...newState,
           backgroundImage: newState.backgroundImage ? 'has-image' : null,
@@ -152,7 +140,6 @@ export const useEditor = () => {
     });
   }, []);
 
-  // Load image
   const loadImage = useCallback((file: File) => {
     if (!canvasRef.current) return;
 
@@ -164,7 +151,6 @@ export const useEditor = () => {
       const imgSrc = e.target?.result as string;
       console.log('File read successfully, creating fabric image...');
       
-      // Use a simpler approach for fabric.js v6
       fabric.Image.fromURL(imgSrc)
         .then((img) => {
           console.log('Fabric image created:', img.width, 'x', img.height);
@@ -180,7 +166,6 @@ export const useEditor = () => {
 
           console.log('Clearing canvas and setting up image...');
 
-          // Clear the canvas properly before adding new image
           canvas.discardActiveObject();
           const objects = canvas.getObjects().slice();
           objects.forEach(obj => {
@@ -191,12 +176,11 @@ export const useEditor = () => {
             }
           });
 
-          // Calculate viewable canvas dimensions while maintaining aspect ratio
           const maxCanvasWidth = 800;
           const maxCanvasHeight = 600;
           const imageAspectRatio = img.width / img.height;
           
-          let canvasWidth, canvasHeight;
+          let canvasWidth: number, canvasHeight: number;
           
           if (imageAspectRatio > maxCanvasWidth / maxCanvasHeight) {
             // Image is wider than the max canvas aspect ratio

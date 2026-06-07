@@ -163,9 +163,8 @@ export default function HomePage() {
 		textAlign: string;
 		rotation: 'left' | 'right';
 	}>) => {
-		updateTextProperties(updates);              // updates Fabric object
+		updateTextProperties(updates);
 		
-		// Only update selectedObjectData with display properties (not rotation commands)
 		const displayUpdates = Object.keys(updates)
 			.filter(key => key !== 'rotation')
 			.reduce((acc, key) => {
@@ -175,7 +174,7 @@ export default function HomePage() {
 			
 		if (Object.keys(displayUpdates).length > 0) {
 			setSelectedObjectData((prev: typeof selectedObjectData) =>
-				prev ? { ...prev, ...displayUpdates } : prev    // instantly reflect in UI
+				prev ? { ...prev, ...displayUpdates } : prev
 			);
 		}
 	}, [updateTextProperties]);
