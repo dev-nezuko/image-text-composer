@@ -60,10 +60,9 @@ export default function HomePage() {
 		}, 50);
 
 		return () => clearTimeout(timeoutId);
-	}, [editorState.selectedLayerId, getSelectedObjectData]);
+	}, [editorState.selectedLayerId, editorState.textLayers, getSelectedObjectData]);
 
 	useEffect(() => {
-		localStorage.removeItem('image-editor-state');
 		const handleKeyDown = (e: KeyboardEvent) => {
 			const target = e.target as HTMLElement | null;
 			const isFormElement =
@@ -80,7 +79,7 @@ export default function HomePage() {
 				return;
 			}
 			if (e.ctrlKey || e.metaKey) {
-				switch (e.key) {
+				switch (e.key.toLowerCase()) {
 					case 'z':
 						e.preventDefault();
 						if (e.shiftKey) {
@@ -111,10 +110,10 @@ export default function HomePage() {
 					e.preventDefault();
 					const canvas = canvasRef.current;
 					const activeObject = canvas.getActiveObject();
-					
+
 					if (activeObject) {
 						const nudgeAmount = e.shiftKey ? 10 : 1;
-						
+
 						switch (e.key) {
 							case 'ArrowUp':
 								activeObject.top = (activeObject.top || 0) - nudgeAmount;
@@ -129,8 +128,9 @@ export default function HomePage() {
 								activeObject.left = (activeObject.left || 0) + nudgeAmount;
 								break;
 						}
-						
+
 						canvas.renderAll();
+						canvas.fire('object:modified', { target: activeObject });
 					}
 				}
 			}
@@ -163,21 +163,23 @@ export default function HomePage() {
 		textAlign: string;
 		rotation: 'left' | 'right';
 	}>) => {
+		const active = canvasRef.current?.getActiveObject() as any;
+		if (!active || active.id !== editorState.selectedLayerId) return;
 		updateTextProperties(updates);
-		
+
 		const displayUpdates = Object.keys(updates)
 			.filter(key => key !== 'rotation')
 			.reduce((acc, key) => {
 				acc[key] = updates[key as keyof typeof updates];
 				return acc;
 			}, {} as any);
-			
+
 		if (Object.keys(displayUpdates).length > 0) {
 			setSelectedObjectData((prev: typeof selectedObjectData) =>
 				prev ? { ...prev, ...displayUpdates } : prev
 			);
 		}
-	}, [updateTextProperties]);
+	}, [updateTextProperties, editorState.selectedLayerId]);
 
 	return (
 		<div className="h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -193,7 +195,7 @@ export default function HomePage() {
 								Adomate Studio
 							</h1>
 							<p className="text-gray-400/70 text-sm font-medium">
-								Creative Design Platform
+								Session-only image editor · export before closing
 							</p>
 						</div>
 					</div>

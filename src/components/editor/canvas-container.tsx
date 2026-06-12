@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 interface CanvasContainerProps {
-	onCanvasReady: (canvas: HTMLCanvasElement) => void;
+	onCanvasReady: (canvas: HTMLCanvasElement) => void | (() => void);
 	width: number;
 	height: number;
 }
@@ -13,7 +13,7 @@ export const CanvasContainer = ({ onCanvasReady, width, height }: CanvasContaine
 
 	useEffect(() => {
 		if (canvasElementRef.current) {
-			onCanvasReady(canvasElementRef.current);
+			return onCanvasReady(canvasElementRef.current);
 		}
 	}, [onCanvasReady]);
 
@@ -21,10 +21,10 @@ export const CanvasContainer = ({ onCanvasReady, width, height }: CanvasContaine
 		<div className="relative">
 			<div
 				className="bg-white shadow-2xl border border-gray-600/20 overflow-hidden rounded-lg"
-				style={{ 
-					width: `${width}px`, 
-					height: `${height}px`, 
-					maxWidth: 'calc(100vw - 640px)', 
+				style={{
+					width: `${width}px`,
+					height: `${height}px`,
+					maxWidth: 'calc(100vw - 640px)',
 					maxHeight: 'calc(100vh - 200px)'
 				}}
 			>

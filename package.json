@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "tsc --project tsconfig.tests.json && node --test .test-build/tests/editor-history.test.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

@@ -2,7 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useEditor } from '@/hooks/use-editor';
 import {
 	Type,
 	Upload,
@@ -39,22 +38,16 @@ export const Toolbar = ({
 	canRedo,
 	hasSelection,
 }: ToolbarProps) => {
-	const { editorState } = useEditor();
-	
+
+
 	const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
 
-		// More permissive image check for debugging
-		const isImageFile = file.type.startsWith('image/') ||
-			file.name.toLowerCase().match(/\.(png|jpg|jpeg|gif|bmp|webp)$/);
-
-		if (!isImageFile) {
-			alert('Please upload an image file');
-			return;
-		}
-
-		console.log('Loading image file:', file.name, file.type, file.size); // Debug log
+    if ((file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) || file.size > 8 * 1024 * 1024) {
+      alert('Choose a PNG image up to 8 MiB.');
+      return;
+    }
 		onImageUpload(file);
 	};
 
@@ -63,9 +56,9 @@ export const Toolbar = ({
 			{/* File Operations */}
 			<div className="flex items-center gap-3 border-r border-gray-600/20 pr-6">
 				<label htmlFor="image-upload">
-					<Button 
-						variant="outline" 
-						className="cursor-pointer bg-gray-600/10 border-gray-600/30 text-gray-300 hover:bg-gray-600/20 hover:border-gray-600/50 transition-all duration-200" 
+					<Button
+						variant="outline"
+						className="cursor-pointer bg-gray-600/10 border-gray-600/30 text-gray-300 hover:bg-gray-600/20 hover:border-gray-600/50 transition-all duration-200"
 						asChild
 					>
 						<div>
@@ -82,8 +75,8 @@ export const Toolbar = ({
 					className="hidden"
 				/>
 
-				<Button 
-					onClick={onExport} 
+				<Button
+					onClick={onExport}
 					variant="outline"
 					className="bg-gray-500/10 border-gray-500/30 text-gray-300 hover:bg-gray-500/20 hover:border-gray-500/50 transition-all duration-200"
 				>
@@ -91,9 +84,9 @@ export const Toolbar = ({
 					Export
 				</Button>
 
-				<Button 
-					onClick={onReset} 
-					variant="outline" 
+				<Button
+					onClick={onReset}
+					variant="outline"
 					size="sm"
 					className="bg-gray-600/10 border-gray-600/30 text-gray-300 hover:bg-gray-600/20 hover:border-gray-600/50 transition-all duration-200"
 				>
@@ -104,21 +97,21 @@ export const Toolbar = ({
 
 			{/* Edit Operations */}
 			<div className="flex items-center gap-3 border-r border-gray-600/20 pr-6">
-				<Button 
-					onClick={onUndo} 
-					disabled={!canUndo} 
-					variant="outline" 
-					size="sm" 
+				<Button
+					aria-label="Undo" onClick={onUndo}
+					disabled={!canUndo}
+					variant="outline"
+					size="sm"
 					className={`bg-gray-700/50 border-gray-600/50 text-gray-300 hover:bg-gray-600/50 hover:border-gray-500/50 transition-all duration-200 ${!canUndo ? 'opacity-50 cursor-not-allowed' : ''}`}
 				>
 					<Undo className="w-4 h-4" />
 				</Button>
 
-				<Button 
-					onClick={onRedo} 
-					disabled={!canRedo} 
-					variant="outline" 
-					size="sm" 
+				<Button
+					aria-label="Redo" onClick={onRedo}
+					disabled={!canRedo}
+					variant="outline"
+					size="sm"
 					className={`bg-gray-700/50 border-gray-600/50 text-gray-300 hover:bg-gray-600/50 hover:border-gray-500/50 transition-all duration-200 ${!canRedo ? 'opacity-50 cursor-not-allowed' : ''}`}
 				>
 					<Redo className="w-4 h-4" />
@@ -127,8 +120,8 @@ export const Toolbar = ({
 
 			{/* Layer Operations */}
 			<div className="flex items-center gap-3 border-r border-gray-600/20 pr-6">
-				<Button 
-					onClick={onAddText} 
+				<Button
+					onClick={onAddText}
 					className="bg-gradient-to-r from-gray-400 to-gray-300 text-gray-900 font-semibold hover:from-gray-300 hover:to-gray-200 transition-all duration-200 shadow-lg shadow-gray-400/25"
 				>
 					<Plus className="w-4 h-4 mr-2" />
@@ -137,9 +130,9 @@ export const Toolbar = ({
 				</Button>
 
 				{hasSelection && (
-					<Button 
-						onClick={onDeleteSelected} 
-						variant="destructive" 
+					<Button
+						onClick={onDeleteSelected}
+						variant="destructive"
 						size="sm"
 						className="bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30 hover:border-red-500/50 transition-all duration-200"
 					>

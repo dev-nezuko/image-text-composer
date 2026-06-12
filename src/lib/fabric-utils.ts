@@ -13,7 +13,7 @@ export const createCanvas = (canvasElement: HTMLCanvasElement): fabric.Canvas =>
 
   // Enable object caching for better performance
   fabric.Object.prototype.objectCaching = true;
-  
+
   // Set default canvas dimensions
   canvas.setDimensions({ width: 800, height: 600 });
 
@@ -40,7 +40,6 @@ export const addTextToCanvas = (canvas: fabric.Canvas, options: {
     fill: options.fill,
     opacity: options.opacity,
     textAlign: options.textAlign,
-    hasRotatingPoint: true,
     cornerStyle: 'circle',
     cornerColor: '#3b82f6',
     cornerStrokeColor: '#ffffff',
@@ -69,14 +68,28 @@ export const updateTextObject = (textObject: fabric.Text, updates: Partial<{
       textObject.set(key as keyof fabric.Text, updates[key as keyof typeof updates]);
     }
   });
-  
+
   textObject.canvas?.renderAll();
 };
 
 export const exportCanvasToPNG = (canvas: fabric.Canvas): string => {
-  return canvas.toDataURL({
-    format: 'png',
-    quality: 1,
-    multiplier: 1, // This ensures original dimensions are preserved
+  const background = canvas.backgroundImage;
+  const width = Math.round(background?.width || canvas.width);
+  const height = Math.round(background?.height || canvas.height);
+  const multiplier = background?.width && canvas.width ? background.width / canvas.width : 1;
+  let rendered = canvas.toCanvasElement(multiplier);
+  if (rendered.width === width && rendered.height === height) return rendered.toDataURL('image/png');
+  // Fabric can truncate a fractional working dimension. Overscan, then crop
+  // without rescaling the pixels to preserve the exact uploaded bounds.
+  rendered = canvas.toCanvasElement(multiplier, {
+    width: Math.ceil(width / multiplier) + 1,
+    height: Math.ceil(height / multiplier) + 1,
   });
+  const exact = document.createElement('canvas');
+  exact.width = width;
+  exact.height = height;
+  const context = exact.getContext('2d');
+  if (!context) throw new Error('PNG export is unavailable in this browser.');
+  context.drawImage(rendered, 0, 0, width, height, 0, 0, width, height);
+  return exact.toDataURL('image/png');
 };

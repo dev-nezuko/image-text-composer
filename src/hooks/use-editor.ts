@@ -2,11 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as fabric from 'fabric';
-import { EditorState, TextLayer } from '@/lib/types';
+import { EditorState, EditorSnapshot, TextLayer } from '@/lib/types';
 import { createCanvas, addTextToCanvas, exportCanvasToPNG } from '@/lib/fabric-utils';
 import { ensureFontLoaded } from '@/lib/google-font';
+import { appendSnapshot } from '@/lib/editor-history';
 
-const STORAGE_KEY = 'image-editor-state';
 const MAX_HISTORY = 20;
 
 export const useEditor = () => {
@@ -23,148 +23,103 @@ export const useEditor = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const styleSaveTimer = useRef<number | null>(null);
-
-  const initCanvas = useCallback((canvasElement: HTMLCanvasElement) => {
-    if (canvasRef.current) {
-      canvasRef.current.dispose();
-    }
-
-    canvasRef.current = createCanvas(canvasElement);
-    
-    canvasRef.current.on('selection:created', (e) => {
-      if (e.selected && e.selected[0]) {
-        const obj = e.selected[0] as any;
-        if (obj.type === 'text' || obj.type === 'i-text') {
-          setEditorState(prev => ({ ...prev, selectedLayerId: obj.id || null }));
-        }
-      }
-    });
-
-    canvasRef.current.on('selection:cleared', () => {
-      setEditorState(prev => ({ ...prev, selectedLayerId: null }));
-    });
-
-    let modificationTimeout: NodeJS.Timeout;
-    canvasRef.current.on('object:modified', () => {
-      if (modificationTimeout) {
-        clearTimeout(modificationTimeout);
-      }
-      
-      modificationTimeout = setTimeout(() => {
-        if (canvasRef.current) {
-          const objects = canvasRef.current.getObjects();
-          const textLayers = objects
-            .filter(obj => obj.type === 'text' || obj.type === 'i-text')
-            .map(obj => {
-              if (!(obj as any).id) {
-                (obj as any).id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              }
-              return {
-                id: (obj as any).id || '',
-                text: (obj as any).text || '',
-                visible: obj.visible !== false,
-                locked: !obj.selectable || !obj.evented,
-              };
-            });
-          
-          setEditorState(prev => ({
-            ...prev,
-            textLayers,
-          }));
-        }
-        
-        saveToHistory();
-      }, 100);
-    });
-
-    canvasRef.current.on('object:moving', (e) => {
-      const obj = e.target;
-      if (obj && canvasRef.current) {
-        const canvas = canvasRef.current;
-        const centerX = canvas.width! / 2;
-        const centerY = canvas.height! / 2;
-        
-        if (Math.abs(obj.left! - centerX) < 20) {
-          obj.left = centerX;
-        }
-        if (Math.abs(obj.top! - centerY) < 20) {
-          obj.top = centerY;
-        }
-      }
-    });
-
-    loadFromStorage();
+  const modificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoring = useRef(false);
+  const pendingDisposal = useRef<Promise<unknown>>(Promise.resolve());
+  const clearPendingEdits = useCallback(() => {
+    if (styleSaveTimer.current !== null) window.clearTimeout(styleSaveTimer.current);
+    if (modificationTimer.current !== null) clearTimeout(modificationTimer.current);
+    styleSaveTimer.current = null;
+    modificationTimer.current = null;
   }, []);
 
   const saveToHistory = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || restoring.current) return;
+    const canvasJSON = canvas.toObject(['id', 'selectable', 'evented']);
+    const layers = canvas.getObjects().filter(obj => obj.type === 'text' || obj.type === 'i-text').map(obj => ({
+      id: (obj as any).id || '', text: (obj as any).text || '', visible: obj.visible !== false,
+      locked: !obj.selectable || !obj.evented,
+    }));
     setEditorState(prev => {
-      const newHistory = prev.history.slice(0, prev.historyIndex + 1);
-      
-              const lightState = {
-          ...prev,
-          backgroundImage: prev.backgroundImage ? 'has-image' : null,
-        };
-      
-      newHistory.push(lightState);
-      
-      if (newHistory.length > MAX_HISTORY) {
-        newHistory.shift();
-      }
-
-      const newState = {
-        ...prev,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
-      };
-
-              try {
-        const stateToSave = {
-          ...newState,
-          backgroundImage: newState.backgroundImage ? 'has-image' : null,
-          history: newState.history.map(h => ({
-            ...h,
-            backgroundImage: h.backgroundImage ? 'has-image' : null,
-          })),
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
-      } catch (error) {
-        console.warn('Failed to save to localStorage:', error);
-        try {
-          localStorage.removeItem(STORAGE_KEY);
-        } catch (clearError) {
-          console.error('Failed to clear localStorage:', clearError);
-        }
-      }
-      
-      return newState;
+      const document = { backgroundImage: prev.backgroundImage, textLayers: layers,
+        selectedLayerId: prev.selectedLayerId, canvasWidth: prev.canvasWidth, canvasHeight: prev.canvasHeight };
+      const snapshot: EditorSnapshot = { document, canvasJSON };
+      return { ...document, ...appendSnapshot(prev.history, prev.historyIndex, snapshot, MAX_HISTORY) };
     });
   }, []);
 
+  const initCanvas = useCallback((element: HTMLCanvasElement) => {
+    let cancelled = false;
+    let instance: fabric.Canvas | null = null;
+    // Defer initialization so Strict Mode's first cleanup can cancel it.
+    pendingDisposal.current.then(() => {
+      if (cancelled) return;
+      instance = createCanvas(element);
+      canvasRef.current = instance;
+      const updateSelection = (event: any) => {
+        const selected = event.selected?.[0];
+        setEditorState(prev => ({ ...prev, selectedLayerId: selected?.id || null }));
+      };
+      instance.on('selection:created', updateSelection);
+      instance.on('selection:updated', updateSelection);
+      instance.on('selection:cleared', () => setEditorState(prev => ({ ...prev, selectedLayerId: null })));
+      const recordEdit = () => {
+        if (restoring.current) return;
+        if (modificationTimer.current !== null) clearTimeout(modificationTimer.current);
+        modificationTimer.current = setTimeout(saveToHistory, 100);
+      };
+      instance.on('object:modified', recordEdit);
+      instance.on('text:changed', recordEdit);
+      instance.on('object:moving', event => {
+        const object = event.target;
+        if (!object || !instance) return;
+        const x = instance.width / 2, y = instance.height / 2;
+        if (Math.abs((object.left || 0) - x) < 20) object.left = x;
+        if (Math.abs((object.top || 0) - y) < 20) object.top = y;
+      });
+      saveToHistory();
+    });
+    return () => {
+      cancelled = true;
+      if (instance) {
+        if (canvasRef.current === instance) canvasRef.current = null;
+        clearPendingEdits();
+        pendingDisposal.current = instance.dispose().catch(() => undefined);
+      }
+    };
+  }, [clearPendingEdits, saveToHistory]);
+
   const loadImage = useCallback((file: File) => {
     if (!canvasRef.current) return;
-
-    console.log('Starting image load for:', file.name, file.type, file.size);
+    if ((file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) || file.size > 8 * 1024 * 1024) {
+      alert('Choose a PNG image up to 8 MiB.');
+      return;
+    }
     setIsLoading(true);
     const reader = new FileReader();
 
     reader.onload = (e) => {
       const imgSrc = e.target?.result as string;
-      console.log('File read successfully, creating fabric image...');
-      
+      const encoded = imgSrc.split(',')[1] || '';
+      if (!encoded.startsWith('iVBORw0KGgo')) {
+        alert('The selected file does not have a PNG signature.');
+        setIsLoading(false);
+        return;
+      }
+
       fabric.Image.fromURL(imgSrc)
         .then((img) => {
-          console.log('Fabric image created:', img.width, 'x', img.height);
-          
+
           const canvas = canvasRef.current;
           if (!canvas) {
             throw new Error('Canvas not available');
           }
-          
-          if (!img || !img.width || !img.height) {
+
+          if (!img || !img.width || !img.height || img.width > 8192 || img.height > 8192 || img.width * img.height > 32000000) {
             throw new Error('Invalid image dimensions');
           }
 
-          console.log('Clearing canvas and setting up image...');
 
           canvas.discardActiveObject();
           const objects = canvas.getObjects().slice();
@@ -179,9 +134,9 @@ export const useEditor = () => {
           const maxCanvasWidth = 800;
           const maxCanvasHeight = 600;
           const imageAspectRatio = img.width / img.height;
-          
+
           let canvasWidth: number, canvasHeight: number;
-          
+
           if (imageAspectRatio > maxCanvasWidth / maxCanvasHeight) {
             // Image is wider than the max canvas aspect ratio
             canvasWidth = maxCanvasWidth;
@@ -199,10 +154,10 @@ export const useEditor = () => {
           const scaleX = canvasWidth / img.width;
           const scaleY = canvasHeight / img.height;
           const scale = Math.min(scaleX, scaleY);
-          
+
           img.scaleX = scale;
           img.scaleY = scale;
-          
+
           // Center the image on the canvas
           img.left = (canvasWidth - img.width * scale) / 2;
           img.top = (canvasHeight - img.height * scale) / 2;
@@ -210,7 +165,6 @@ export const useEditor = () => {
           // Set the image as background
           (canvas as any).backgroundImage = img;
           canvas.renderAll();
-          console.log('Background image set successfully');
 
           setEditorState(prev => ({
             ...prev,
@@ -222,7 +176,6 @@ export const useEditor = () => {
           }));
 
           saveToHistory();
-          console.log('Image loaded successfully!');
           setIsLoading(false);
         })
         .catch((err) => {
@@ -237,7 +190,7 @@ export const useEditor = () => {
       setIsLoading(false);
       alert('Failed to read image file. Please check the file and try again.');
     };
-    
+
     reader.readAsDataURL(file);
   }, [saveToHistory]);
 
@@ -307,7 +260,7 @@ export const useEditor = () => {
     const activeObject = canvas.getActiveObject() as any;
 
     // Ensure we only operate on text objects, not images or other objects
-    if (!activeObject || (activeObject.type !== 'text' && activeObject.type !== 'i-text')) {
+    if (!activeObject || activeObject.id !== editorState.selectedLayerId || (activeObject.type !== 'text' && activeObject.type !== 'i-text')) {
       console.warn('Attempted to update properties on non-text object');
       return;
     }
@@ -316,6 +269,7 @@ export const useEditor = () => {
     const weight = (updates.fontWeight ?? activeObject.fontWeight) as string | number | undefined;
 
     const apply = () => {
+      if (canvasRef.current !== canvas || !canvas.getObjects().includes(activeObject)) return;
       try {
         // Batch all property updates to minimize re-renders
         const allUpdates: any = {};
@@ -325,10 +279,10 @@ export const useEditor = () => {
         if (updates.rotation && (activeObject.type === 'text' || activeObject.type === 'i-text')) {
           const currentAngle = activeObject.angle || 0;
           const rotationAmount = 15; // degrees
-          const newAngle = updates.rotation === 'left' 
-            ? currentAngle - rotationAmount 
+          const newAngle = updates.rotation === 'left'
+            ? currentAngle - rotationAmount
             : currentAngle + rotationAmount;
-          
+
           allUpdates.angle = newAngle;
           needsRender = true;
         }
@@ -355,7 +309,7 @@ export const useEditor = () => {
             hasControls: true,
             hasBorders: true
           });
-          
+
           // Only render if we actually made changes
           if (needsRender) {
             // Batch coordinate updates
@@ -370,7 +324,6 @@ export const useEditor = () => {
         styleSaveTimer.current = window.setTimeout(() => {
           // Trigger object:modified event to update state
           canvas.fire('object:modified', { target: activeObject });
-          saveToHistory();
         }, 300) as unknown as number;
       } catch (error) {
         console.error('Error updating text properties:', error);
@@ -387,53 +340,52 @@ export const useEditor = () => {
   // Delete selected layer
   const deleteSelectedLayer = useCallback(() => {
     if (!canvasRef.current) return;
-    localStorage.removeItem('image-editor-state');
     const canvas = canvasRef.current;
     const activeObject = canvas.getActiveObject();
 
     if (activeObject) {
       const layerId = (activeObject as any).id;
       canvas.remove(activeObject);
-      
+
       // Update the textLayers state to remove the deleted layer
       setEditorState(prev => ({
         ...prev,
         selectedLayerId: null,
         textLayers: prev.textLayers.filter(layer => layer.id !== layerId)
       }));
-      
+
       saveToHistory();
     }
   }, [saveToHistory]);
 
-  // Undo/Redo
+  const restoreSnapshot = useCallback(async (snapshot: EditorSnapshot, historyIndex: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas || restoring.current) return;
+    restoring.current = true;
+    clearPendingEdits();
+    setIsLoading(true);
+    try {
+      canvas.discardActiveObject();
+      await canvas.loadFromJSON(snapshot.canvasJSON);
+      if (canvasRef.current !== canvas) return;
+      canvas.setDimensions({ width: snapshot.document.canvasWidth, height: snapshot.document.canvasHeight });
+      canvas.requestRenderAll();
+      setEditorState(prev => ({ ...snapshot.document, selectedLayerId: null, history: prev.history, historyIndex }));
+    } catch {
+      alert('The previous canvas state could not be restored. Export the current design before continuing.');
+    } finally {
+      restoring.current = false;
+      setIsLoading(false);
+    }
+  }, [clearPendingEdits]);
   const undo = useCallback(() => {
-    setEditorState(prev => {
-      if (prev.historyIndex > 0) {
-        const previousState = prev.history[prev.historyIndex - 1];
-        return {
-          ...previousState,
-          history: prev.history,
-          historyIndex: prev.historyIndex - 1,
-        };
-      }
-      return prev;
-    });
-  }, []);
-
+    const index = editorState.historyIndex - 1;
+    if (index >= 0) void restoreSnapshot(editorState.history[index], index);
+  }, [editorState.history, editorState.historyIndex, restoreSnapshot]);
   const redo = useCallback(() => {
-    setEditorState(prev => {
-      if (prev.historyIndex < prev.history.length - 1) {
-        const nextState = prev.history[prev.historyIndex + 1];
-        return {
-          ...nextState,
-          history: prev.history,
-          historyIndex: prev.historyIndex + 1,
-        };
-      }
-      return prev;
-    });
-  }, []);
+    const index = editorState.historyIndex + 1;
+    if (index < editorState.history.length) void restoreSnapshot(editorState.history[index], index);
+  }, [editorState.history, editorState.historyIndex, restoreSnapshot]);
 
   // Export canvas
   const exportToPNG = useCallback(() => {
@@ -455,33 +407,13 @@ export const useEditor = () => {
   }, []);
 
   const reorderLayer = useCallback((fromIndex: number, toIndex: number) => {
-    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const objects = canvas.getObjects();
-    const targetObject = objects[fromIndex];
-    if (targetObject) {
-      // Remove the object from its current position
-      canvas.remove(targetObject);
-      
-      // Get the remaining objects
-      const remainingObjects = canvas.getObjects();
-      
-      // Clear the canvas
-      canvas.clear();
-      
-      // Re-add objects in the correct order
-      for (let i = 0; i < remainingObjects.length + 1; i++) {
-        if (i === toIndex) {
-          canvas.add(targetObject);
-        }
-        if (i < remainingObjects.length) {
-          canvas.add(remainingObjects[i]);
-        }
-      }
-      
-      canvas.renderAll();
-      saveToHistory();
-    }
+    if (!canvas) return;
+    const object = canvas.getObjects()[fromIndex];
+    if (!object) return;
+    canvas.moveObjectTo(object, toIndex);
+    canvas.requestRenderAll();
+    saveToHistory();
   }, [saveToHistory]);
 
   const toggleLayerVisibility = useCallback((layerId: string) => {
@@ -492,18 +424,17 @@ export const useEditor = () => {
     if (targetObject) {
       targetObject.visible = !targetObject.visible;
       canvas.renderAll();
-      
-      localStorage.removeItem('image-editor-state')
+
       // Update the textLayers state to reflect visibility change
       setEditorState(prev => ({
         ...prev,
-        textLayers: prev.textLayers.map(layer => 
-          layer.id === layerId 
-            ? { ...layer, visible: targetObject.visible } 
+        textLayers: prev.textLayers.map(layer =>
+          layer.id === layerId
+            ? { ...layer, visible: targetObject.visible }
             : layer
         )
       }));
-      
+
       saveToHistory();
     }
   }, [saveToHistory]);
@@ -518,17 +449,17 @@ export const useEditor = () => {
       targetObject.selectable = !targetObject.selectable;
       targetObject.evented = !targetObject.evented;
       canvas.renderAll();
-      
+
       // Update the textLayers state to reflect lock change
       setEditorState(prev => ({
         ...prev,
-        textLayers: prev.textLayers.map(layer => 
-          layer.id === layerId 
-            ? { ...layer, locked: !targetObject.selectable } 
+        textLayers: prev.textLayers.map(layer =>
+          layer.id === layerId
+            ? { ...layer, locked: !targetObject.selectable }
             : layer
         )
       }));
-      
+
       saveToHistory();
     }
   }, [saveToHistory]);
@@ -541,14 +472,14 @@ export const useEditor = () => {
     if (targetObject) {
       canvas.remove(targetObject);
       canvas.renderAll();
-      
+
       // Update the textLayers state to remove the deleted layer
       setEditorState(prev => ({
         ...prev,
         selectedLayerId: prev.selectedLayerId === layerId ? null : prev.selectedLayerId,
         textLayers: prev.textLayers.filter(layer => layer.id !== layerId)
       }));
-      
+
       saveToHistory();
     }
   }, [saveToHistory]);
@@ -563,7 +494,7 @@ export const useEditor = () => {
       targetObject.clone().then((clonedObject: any) => {
         // Generate new unique ID
         clonedObject.id = `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+
         // Offset position to make it visible
         clonedObject.set({
           left: (clonedObject.left || 0) + 20,
@@ -573,11 +504,11 @@ export const useEditor = () => {
           hasControls: true,
           hasBorders: true
         });
-        
+
         canvas.add(clonedObject);
         canvas.setActiveObject(clonedObject);
         canvas.renderAll();
-        
+
         // Update textLayers in state
         setEditorState(prev => ({
           ...prev,
@@ -592,7 +523,7 @@ export const useEditor = () => {
             }
           ]
         }));
-        
+
         saveToHistory();
       }).catch((error) => {
         console.error('Failed to duplicate layer:', error);
@@ -605,10 +536,11 @@ export const useEditor = () => {
     if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
+    clearPendingEdits();
 
     // Clear selection first to avoid issues
     canvas.discardActiveObject();
-    
+
     // Get all objects and dispose them properly
     const objects = canvas.getObjects().slice(); // Create a copy of the array
     objects.forEach(obj => {
@@ -634,7 +566,7 @@ export const useEditor = () => {
     canvas.setDimensions({ width: 800, height: 600 });
     canvas.set('backgroundColor', '#f8f9fa');
     (canvas as any).backgroundImage = null;
-    
+
     // Force render
     canvas.renderAll();
 
@@ -649,30 +581,13 @@ export const useEditor = () => {
     };
 
     setEditorState(initialState);
-    localStorage.removeItem(STORAGE_KEY);
-  }, []);
-
-  // Load from localStorage
-  const loadFromStorage = useCallback(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const state = JSON.parse(saved);
-        // Ensure textLayers exists in loaded state
-        if (!state.textLayers) {
-          state.textLayers = [];
-        }
-        setEditorState(state);
-      }
-    } catch (error) {
-      console.error('Failed to load from storage:', error);
-    }
-  }, []);
+    saveToHistory();
+  }, [clearPendingEdits, saveToHistory]);
 
   const setBackgroundEditable = useCallback((editable: boolean) => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    
+
     // Since we're using direct backgroundImage assignment, handle conversion differently
     if (editable && (canvas as any).backgroundImage) {
       // Convert background image to a regular object for editing
@@ -687,7 +602,7 @@ export const useEditor = () => {
           hasControls: true,
           hasBorders: true,
         });
-        
+
         // Clear background and add as regular object
         (canvas as any).backgroundImage = null;
         canvas.add(imgClone);

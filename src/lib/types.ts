@@ -4,17 +4,21 @@ export interface TextLayer {
   visible: boolean;
   locked: boolean;
 }
-
-export interface EditorState {
+export interface EditorDocument {
   backgroundImage: string | null;
   textLayers: TextLayer[];
   selectedLayerId: string | null;
   canvasWidth: number;
   canvasHeight: number;
-  history: EditorState[];
+}
+export interface EditorSnapshot {
+  document: EditorDocument;
+  canvasJSON: Record<string, unknown>;
+}
+export interface EditorState extends EditorDocument {
+  history: EditorSnapshot[];
   historyIndex: number;
 }
-
 export interface GoogleFont {
   family: string;
   variants: string[];

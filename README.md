@@ -1,193 +1,61 @@
-# Image Text Editor
+# Image text composer
 
-A professional image text editor built with Next.js, TypeScript, and Fabric.js. Create stunning designs by adding beautiful text overlays to your PNG images.
+A browser canvas editor for adding and styling text over a PNG image. Upload an image, edit text layers, arrange their stacking order and export a PNG. The existing interface calls the workspace **Adomate Studio**.
 
-## 🚀 Features
+![Editor with a synthetic image and text layer](docs/screenshots/composer.png)
 
-### Core Functionality
-- **PNG Image Upload**: Upload PNG images with automatic aspect ratio matching
-- **Multiple Text Layers**: Add unlimited text layers with individual styling
-- **Rich Text Editing**: Full control over typography and appearance
-- **Transform Tools**: Drag, resize, and rotate text layers with precision
-- **Layer Management**: Reorder layers to control stacking order
-- **Export**: Save your design as PNG with original dimensions
+The screenshot comes from the real local editor using a generated geometric PNG and synthetic text. No personal image, account or font API key was used.
 
-### Text Styling Options
-- **Google Fonts Integration**: Access to 200+ popular Google Fonts
-- **Typography Controls**: Font size, weight, color, and opacity
-- **Text Alignment**: Left, center, and right alignment
-- **Multi-line Support**: Create text blocks with multiple lines
-- **Real-time Preview**: See changes instantly as you edit
+## Use the editor
 
-### Advanced Features
-- **Undo/Redo System**: 20+ step history with visual indicator
-- **Autosave**: Automatic saving to localStorage
-- **Keyboard Shortcuts**: 
-  - `Ctrl/Cmd + Z`: Undo
-  - `Ctrl/Cmd + Shift + Z` or `Ctrl/Cmd + Y`: Redo
-  - `Ctrl/Cmd + T`: Add text layer
-  - `Delete/Backspace`: Remove selected layer
-- **Snap Guides**: Visual guides for precise positioning
-- **Canvas Interactions**: Professional editing experience with Fabric.js
-
-## 🛠️ Technology Stack
-
-- **Framework**: Next.js 13 with App Router
-- **Language**: TypeScript
-- **Canvas Library**: Fabric.js
-- **Styling**: Tailwind CSS + shadcn/ui
-- **Color Picker**: react-colorful
-- **Icons**: Lucide React
-- **Fonts**: Google Fonts API
-
-## 📦 Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd image-text-editor
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Run the development server:
-```bash
+```sh
+npm ci --ignore-scripts
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [the workspace](http://localhost:3000). Use Node 22 for the reviewed toolchain; the lockfile retains Next.js 15.4.6, React 18 and Fabric 6.
 
-## 🎯 Usage
+1. Upload a PNG of up to 8 MiB. Decoded dimensions are limited to 8,192 pixels per side and 32 million pixels overall.
+2. Add text, then edit its contents, font, size, weight, color, opacity or alignment.
+3. Use the layer panel to select, reorder, hide, lock, duplicate or delete text. Drag/resize/rotate controls operate on the canvas.
+4. Undo/redo restores the actual canvas document, not just the layer list. History is capped at 20 snapshots; editing after undo replaces the old redo branch.
+5. Export before closing or resetting. **This version is session-only; it does not promise autosave or draft recovery.**
 
-1. **Upload an Image**: Click "Upload PNG" to select your background image
-2. **Add Text**: Click "Add Text" to create a new text layer
-3. **Style Your Text**: Use the properties panel to customize font, size, color, etc.
-4. **Transform**: Drag, resize, and rotate text layers directly on the canvas
-5. **Layer Management**: Reorder layers using the layer panel
-6. **Export**: Click "Export" to download your final design as PNG
+The working preview fits within 800 × 600 while preserving the image aspect ratio. PNG export scales back to the uploaded background dimensions. A verified 1,600 × 1,000 upload exported at 1,600 × 1,000, and an odd 1,577 × 913 fixture also retained its exact dimensions. With no uploaded background, export uses the working canvas dimensions.
 
-## 🔧 Architecture
+Keyboard shortcuts work outside form fields and active text editing: Ctrl/Cmd+Z for undo, Shift+Ctrl/Cmd+Z or Ctrl/Cmd+Y for redo, Ctrl/Cmd+T to add text, Delete/Backspace to delete a selected layer, and arrow keys to nudge it. Shift increases the nudge distance.
 
-### Key Components
-- `useEditor`: Main hook managing canvas state and operations
-- `CanvasContainer`: Fabric.js canvas wrapper component
-- `Toolbar`: Main toolbar with file and edit operations
-- `PropertiesPanel`: Text styling controls
-- `fabric-utils`: Canvas manipulation utilities
-- `google-fonts`: Font loading and management
+## Where the state lives
 
-### State Management
-The editor uses a custom hook (`useEditor`) that manages:
-- Canvas instance and fabric objects
-- Editor state (layers, selection, dimensions)
-- History system for undo/redo
-- localStorage persistence
+```mermaid
+flowchart LR
+    Panels[Toolbar and layer/property panels] --> Hook[useEditor]
+    Hook --> Canvas[Fabric canvas]
+    Canvas --> History[Flat in-memory snapshots]
+    History --> Restore[loadFromJSON]
+    Restore --> Canvas
+    Canvas --> PNG[Browser PNG download]
+```
 
-### Design Decisions
+`src/hooks/use-editor.ts` manages operations and the canvas lifecycle. `src/lib/editor-history.ts` caps history and drops stale redo branches. Fabric serialization includes layer IDs, selection/locking properties and the background; restored snapshots rehydrate the canvas. Layer reordering uses the canvas stack operation without clearing the image.
 
-**Why Fabric.js?**
-- Robust canvas manipulation library
-- Excellent text editing capabilities
-- Built-in transform controls (resize, rotate)
-- Event system for user interactions
-- Performance optimized for complex operations
+`src/lib/fabric-utils.ts` creates text and renders PNG exports. Its export boundary handles fractional preview dimensions by overscanning and cropping when Fabric's integer canvas size would otherwise truncate a pixel. The implementation follows Fabric's [serialization guidance](https://www.fabricjs.com/docs/using-custom-properties/) and [canvas API](https://www.fabricjs.com/api/classes/canvas/).
 
-**State Architecture**
-- Single source of truth in `useEditor` hook
-- Immutable state updates for predictable behavior
-- History tracking for undo/redo functionality
-- localStorage integration for persistence
+## Fonts and data handling
 
-**Component Structure**
-- Modular design with clear separation of concerns
-- Reusable UI components with shadcn/ui
-- Custom hooks for complex logic
-- TypeScript for type safety
+Core editing works with the built-in Arial, Georgia and Verdana choices. An optional `NEXT_PUBLIC_GOOGLE_FONTS_API_KEY` enables the Google Fonts catalog. That variable is visible in the browser bundle; it is not a place for private credentials. External font loading is bounded and falls back rather than polling forever.
 
-## 🚀 Deployment
+Images are read into the browser canvas; there is no application image-upload backend. Optional Google font requests still contact external font services. Use synthetic images for shared demonstrations. Previous metadata-only localStorage records are not treated as recoverable canvas documents.
 
-The application is optimized for static deployment:
+## Verification and boundaries
 
-1. Build the application:
-```bash
+```sh
+npm test
 npm run build
 ```
 
-2. Deploy to Vercel:
-```bash
-vercel deploy
-```
+Four Node tests cover flat bounded history, redo-branch replacement, immutable history arrays and invalid limits. A Playwright run against system Chrome exercised upload, text editing, undo, keyboard redo, reordering, visibility, retained background pixels and PNG dimensions. The desktop screenshot was inspected, with no page errors recorded.
 
-## 🎨 Customization
+The production build type-checks and exports static files to `out/`; serve that directory with a static host/server. `next start` is not the preview mode for this configuration. Linting remains skipped by the existing Next configuration, and legacy Browserslist/tooling warnings remain.
 
-### Adding New Font Providers
-Extend the `google-fonts.ts` utility to support additional font providers:
-
-```typescript
-export const loadCustomFont = async (fontUrl: string, fontFamily: string) => {
-  // Implementation for custom font loading
-};
-```
-
-### Custom Transform Tools
-Add new transform capabilities by extending the Fabric.js objects:
-
-```typescript
-fabric.Text.prototype.customTransform = function() {
-  // Custom transformation logic
-};
-```
-
-### Additional Export Formats
-Extend the export functionality to support more formats:
-
-```typescript
-export const exportToSVG = (canvas: fabric.Canvas): string => {
-  return canvas.toSVG();
-};
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Canvas not initializing:**
-- Ensure Fabric.js is properly imported
-- Check console for JavaScript errors
-- Verify canvas element is mounted
-
-**Fonts not loading:**
-- Check Google Fonts API connectivity
-- Verify font names match Google Fonts catalog
-- Check browser console for font loading errors
-
-**Export quality issues:**
-- Ensure original image dimensions are preserved
-- Check canvas scaling factors
-- Verify export settings in fabric-utils
-
-## 📝 License
-
-This project is open source and available under the MIT License.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📞 Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Review existing GitHub issues
-- Create a new issue with detailed description
-
----
-
-Built with ❤️ using Next.js, TypeScript, and Fabric.js
+Persistent drafts, large-image/layer-count stress tests, mobile layouts, cross-browser behavior and the live Google Fonts catalog were not verified. Snapshot memory still grows with document/image size despite the history cap. The prototype does not claim collaboration, a tested “unlimited layers” capacity or production-grade recovery. No license file is included, so the previous unsupported MIT claim was removed.

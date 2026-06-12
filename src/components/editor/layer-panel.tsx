@@ -3,12 +3,12 @@
 import { useState, memo, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { 
-  ChevronUp, 
-  ChevronDown, 
-  Eye, 
-  EyeOff, 
-  Lock, 
+import {
+  ChevronUp,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Lock,
   Unlock,
   Trash2,
   Copy
@@ -74,8 +74,8 @@ const LayerItem = memo(({
   return (
     <Card
       className={`cursor-pointer transition-all duration-200 border ${
-        isSelected 
-          ? 'ring-2 ring-gray-400/50 bg-gray-400/10 border-gray-400/30' 
+        isSelected
+          ? 'ring-2 ring-gray-400/50 bg-gray-400/10 border-gray-400/30'
           : 'bg-gray-800/30 border-gray-700/50 hover:bg-gray-700/30 hover:border-gray-600/50'
       } ${isDragged ? 'opacity-50 scale-95' : ''}`}
       draggable
@@ -97,6 +97,7 @@ const LayerItem = memo(({
                     e.stopPropagation();
                     moveLayer('up');
                   }}
+                  aria-label="Move layer up"
                   disabled={index === 0}
                 >
                   <ChevronUp className="h-3 w-3" />
@@ -109,12 +110,13 @@ const LayerItem = memo(({
                     e.stopPropagation();
                     moveLayer('down');
                   }}
+                  aria-label="Move layer down"
                   disabled={index === totalLayers - 1}
                 >
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </div>
-              
+
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate text-gray-200">
                   {layer.text || 'Empty Text'}
@@ -125,9 +127,9 @@ const LayerItem = memo(({
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-1">
-            <Button
+            <Button aria-label="Hide or show layer"
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
@@ -142,8 +144,8 @@ const LayerItem = memo(({
                 <EyeOff className="h-4 w-4" />
               )}
             </Button>
-            
-            <Button
+
+            <Button aria-label="Lock or unlock layer"
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
@@ -158,8 +160,8 @@ const LayerItem = memo(({
                 <Unlock className="h-4 w-4" />
               )}
             </Button>
-            
-            <Button
+
+            <Button aria-label="Duplicate layer"
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-gray-400/60 hover:text-gray-300 hover:bg-gray-600/20"
@@ -170,8 +172,8 @@ const LayerItem = memo(({
             >
               <Copy className="h-4 w-4" />
             </Button>
-            
-            <Button
+
+            <Button aria-label="Delete layer"
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-red-400/60 hover:text-red-400 hover:bg-red-500/20"
@@ -232,7 +234,7 @@ export const LayerPanel = memo(({
 
     const draggedIndex = layers.findIndex(layer => layer.id === draggedLayerId);
     const targetIndex = layers.findIndex(layer => layer.id === targetLayerId);
-    
+
     if (draggedIndex !== -1 && targetIndex !== -1) {
       onLayerReorder(draggedIndex, targetIndex);
     }
@@ -252,7 +254,7 @@ export const LayerPanel = memo(({
             {layers.length} layer{layers.length !== 1 ? 's' : ''}
           </span>
         </div>
-        
+
         <div className="space-y-2">
           {layers.map((layer, index) => (
             <LayerItem
@@ -292,4 +294,4 @@ export const LayerPanel = memo(({
   ]);
 
   return layerList;
-}); 
+});

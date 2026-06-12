@@ -46,7 +46,7 @@ const useFonts = () => {
 
 	useEffect(() => {
 		let mounted = true;
-		
+
 		loadGoogleFonts().then((loadedFonts: GoogleFont[]) => {
 			if (mounted) {
 				setFonts(loadedFonts);
@@ -68,34 +68,35 @@ const useFonts = () => {
 
 const useDebouncedUpdate = (callback: (updates: any) => void, delay: number = 100) => {
 	const timeoutRef = useRef<NodeJS.Timeout>();
+	useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, [callback, delay]);
 
 	return useCallback((updates: any) => {
 		if (timeoutRef.current) {
 			clearTimeout(timeoutRef.current);
 		}
-		
+
 		timeoutRef.current = setTimeout(() => {
 			callback(updates);
 		}, delay);
 	}, [callback, delay]);
 };
 
-const TextContentSection = memo(({ 
-	text, 
-	onUpdate 
-}: { 
-	text: string; 
-	onUpdate: (updates: any) => void; 
+const TextContentSection = memo(({
+	text,
+	onUpdate
+}: {
+	text: string;
+	onUpdate: (updates: any) => void;
 }) => {
-	const debouncedUpdate = useDebouncedUpdate(onUpdate, 300);
+
 
 	return (
 		<div className="space-y-2">
 			<Label htmlFor="text-content" className="text-gray-200 text-sm font-medium">Content</Label>
 			<Textarea
 				id="text-content"
-				defaultValue={text}
-				onChange={(e) => debouncedUpdate({ text: e.target.value })}
+				value={text}
+				onChange={(e) => onUpdate({ text: e.target.value })}
 				className="resize-none bg-gray-800/50 border-gray-700/50 text-gray-200 placeholder-gray-400/40 focus:border-gray-500/50 focus:ring-gray-500/20"
 				rows={3}
 				placeholder="Enter your text here..."
@@ -105,16 +106,16 @@ const TextContentSection = memo(({
 });
 TextContentSection.displayName = 'TextContentSection';
 
-const FontFamilySection = memo(({ 
-	fontFamily, 
-	fonts, 
-	fontsLoading, 
-	onUpdate 
-}: { 
-	fontFamily: string; 
-	fonts: GoogleFont[]; 
-	fontsLoading: boolean; 
-	onUpdate: (updates: any) => void; 
+const FontFamilySection = memo(({
+	fontFamily,
+	fonts,
+	fontsLoading,
+	onUpdate
+}: {
+	fontFamily: string;
+	fonts: GoogleFont[];
+	fontsLoading: boolean;
+	onUpdate: (updates: any) => void;
 }) => {
 	const handleFontChange = useCallback(async (newFontFamily: string) => {
 		await loadFont(newFontFamily);
@@ -145,12 +146,12 @@ const FontFamilySection = memo(({
 });
 FontFamilySection.displayName = 'FontFamilySection';
 
-const FontSizeSection = memo(({ 
-	fontSize, 
-	onUpdate 
-}: { 
-	fontSize: number; 
-	onUpdate: (updates: any) => void; 
+const FontSizeSection = memo(({
+	fontSize,
+	onUpdate
+}: {
+	fontSize: number;
+	onUpdate: (updates: any) => void;
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 
@@ -168,8 +169,8 @@ const FontSizeSection = memo(({
 				/>
 				<Input
 					type="number"
-					defaultValue={fontSize}
-					onChange={(e) => debouncedUpdate({ fontSize: parseInt(e.target.value) || 8 })}
+					value={fontSize}
+					onChange={(e) => onUpdate({ fontSize: Math.max(8, Math.min(200, parseInt(e.target.value) || 8)) })}
 					className="w-16 bg-gray-800/50 border-gray-700/50 text-gray-200 focus:border-gray-500/50 focus:ring-gray-500/20"
 					min={8}
 					max={200}
@@ -180,12 +181,12 @@ const FontSizeSection = memo(({
 });
 FontSizeSection.displayName = 'FontSizeSection';
 
-const FontWeightSection = memo(({ 
-	fontWeight, 
-	onUpdate 
-}: { 
-	fontWeight: string | number; 
-	onUpdate: (updates: any) => void; 
+const FontWeightSection = memo(({
+	fontWeight,
+	onUpdate
+}: {
+	fontWeight: string | number;
+	onUpdate: (updates: any) => void;
 }) => {
 	return (
 		<div className="space-y-2">
@@ -207,12 +208,12 @@ const FontWeightSection = memo(({
 });
 FontWeightSection.displayName = 'FontWeightSection';
 
-const ColorSection = memo(({ 
-	fill, 
-	onUpdate 
-}: { 
-	fill: string; 
-	onUpdate: (updates: any) => void; 
+const ColorSection = memo(({
+	fill,
+	onUpdate
+}: {
+	fill: string;
+	onUpdate: (updates: any) => void;
 }) => {
 	const [color, setColor] = useState(fill);
 
@@ -230,8 +231,8 @@ const ColorSection = memo(({
 			<Label className="text-gray-200 text-sm font-medium">Color</Label>
 			<Popover>
 				<PopoverTrigger asChild>
-					<Button 
-						variant="outline" 
+					<Button
+						variant="outline"
 						className="w-full justify-start gap-3 bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50"
 					>
 						<div
@@ -251,12 +252,12 @@ const ColorSection = memo(({
 });
 ColorSection.displayName = 'ColorSection';
 
-const OpacitySection = memo(({ 
-	opacity, 
-	onUpdate 
-}: { 
-	opacity: number; 
-	onUpdate: (updates: any) => void; 
+const OpacitySection = memo(({
+	opacity,
+	onUpdate
+}: {
+	opacity: number;
+	onUpdate: (updates: any) => void;
 }) => {
 	const debouncedUpdate = useDebouncedUpdate(onUpdate, 100);
 
@@ -281,12 +282,12 @@ const OpacitySection = memo(({
 });
 OpacitySection.displayName = 'OpacitySection';
 
-const AlignmentSection = memo(({ 
-	textAlign, 
-	onUpdate 
-}: { 
-	textAlign: string; 
-	onUpdate: (updates: any) => void; 
+const AlignmentSection = memo(({
+	textAlign,
+	onUpdate
+}: {
+	textAlign: string;
+	onUpdate: (updates: any) => void;
 }) => {
 	return (
 		<div className="space-y-2">
@@ -296,8 +297,8 @@ const AlignmentSection = memo(({
 					variant={textAlign === 'left' ? 'default' : 'outline'}
 					size="sm"
 					onClick={() => onUpdate({ textAlign: 'left' })}
-					className={textAlign === 'left' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
+					className={textAlign === 'left'
+						? 'bg-gray-400 text-gray-900 hover:bg-gray-300'
 						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
 					}
 				>
@@ -307,8 +308,8 @@ const AlignmentSection = memo(({
 					variant={textAlign === 'center' ? 'default' : 'outline'}
 					size="sm"
 					onClick={() => onUpdate({ textAlign: 'center' })}
-					className={textAlign === 'center' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
+					className={textAlign === 'center'
+						? 'bg-gray-400 text-gray-900 hover:bg-gray-300'
 						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
 					}
 				>
@@ -318,8 +319,8 @@ const AlignmentSection = memo(({
 					variant={textAlign === 'right' ? 'default' : 'outline'}
 					size="sm"
 					onClick={() => onUpdate({ textAlign: 'right' })}
-					className={textAlign === 'right' 
-						? 'bg-gray-400 text-gray-900 hover:bg-gray-300' 
+					className={textAlign === 'right'
+						? 'bg-gray-400 text-gray-900 hover:bg-gray-300'
 						: 'bg-gray-800/50 border-gray-700/50 text-gray-200 hover:bg-gray-700/50 hover:border-gray-600/50'
 					}
 				>
@@ -331,10 +332,10 @@ const AlignmentSection = memo(({
 });
 AlignmentSection.displayName = 'AlignmentSection';
 
-const RotationSection = memo(({ 
-	onUpdate 
-}: { 
-	onUpdate: (updates: any) => void; 
+const RotationSection = memo(({
+	onUpdate
+}: {
+	onUpdate: (updates: any) => void;
 }) => {
 	return (
 		<div className="space-y-2">
@@ -387,45 +388,45 @@ export const PropertiesPanel = memo(({ selectedObjectData, onUpdateText }: Prope
 
 		return (
 			<div className="p-6 space-y-6">
-				<TextContentSection 
-					text={selectedObjectData.text} 
-					onUpdate={onUpdateText} 
+				<TextContentSection
+					text={selectedObjectData.text}
+					onUpdate={onUpdateText}
 				/>
-				
-				<FontFamilySection 
-					fontFamily={selectedObjectData.fontFamily} 
-					fonts={fonts} 
-					fontsLoading={fontsLoading} 
-					onUpdate={onUpdateText} 
+
+				<FontFamilySection
+					fontFamily={selectedObjectData.fontFamily}
+					fonts={fonts}
+					fontsLoading={fontsLoading}
+					onUpdate={onUpdateText}
 				/>
-				
-				<FontSizeSection 
-					fontSize={selectedObjectData.fontSize} 
-					onUpdate={onUpdateText} 
+
+				<FontSizeSection
+					fontSize={selectedObjectData.fontSize}
+					onUpdate={onUpdateText}
 				/>
-				
-				<FontWeightSection 
-					fontWeight={selectedObjectData.fontWeight} 
-					onUpdate={onUpdateText} 
+
+				<FontWeightSection
+					fontWeight={selectedObjectData.fontWeight}
+					onUpdate={onUpdateText}
 				/>
-				
-				<ColorSection 
-					fill={selectedObjectData.fill} 
-					onUpdate={onUpdateText} 
+
+				<ColorSection
+					fill={selectedObjectData.fill}
+					onUpdate={onUpdateText}
 				/>
-				
-				<OpacitySection 
-					opacity={selectedObjectData.opacity} 
-					onUpdate={onUpdateText} 
+
+				<OpacitySection
+					opacity={selectedObjectData.opacity}
+					onUpdate={onUpdateText}
 				/>
-				
-				<AlignmentSection 
-					textAlign={selectedObjectData.textAlign} 
-					onUpdate={onUpdateText} 
+
+				<AlignmentSection
+					textAlign={selectedObjectData.textAlign}
+					onUpdate={onUpdateText}
 				/>
-				
-				<RotationSection 
-					onUpdate={onUpdateText} 
+
+				<RotationSection
+					onUpdate={onUpdateText}
 				/>
 			</div>
 		);
